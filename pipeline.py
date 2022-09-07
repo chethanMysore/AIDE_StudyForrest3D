@@ -8,6 +8,10 @@ import torch.utils.data
 import torchio as tio
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
+import os
+import numpy as np
+from glob import glob
+import torchvision as tv
 
 from evaluation.metrics import (SegmentationLoss, ConsistencyLoss)
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
@@ -42,7 +46,6 @@ class Pipeline:
         self.model_name = cmd_args.model_name
         self.clip_grads = cmd_args.clip_grads
         self.with_apex = cmd_args.apex
-        self.num_classes = cmd_args.num_classes
 
         # image input parameters
         self.patch_size = cmd_args.patch_size
@@ -56,7 +59,7 @@ class Pipeline:
         self.num_worker = cmd_args.num_worker
 
         # Losses
-        self.random_transforms = [tio.RandomFlip(axes=('LR',), flip_probability=0.75)]
+        self.random_transforms = [tv.transforms.RandomAffine(degrees=(30, 70), scale=(0.5, 0.75))]
         self.segcor_weight1 = cmd_args.segcor_weight1
         self.segcor_weight2 = cmd_args.segcor_weight2
         self.segmentation_loss = SegmentationLoss()
@@ -74,7 +77,6 @@ class Pipeline:
 
         self.logger.info("Model Hyper Params: ")
         self.logger.info("\nLearning Rate: " + str(self.learning_rate))
-        self.logger.info("\nNumber of Convolutional Blocks: " + str(cmd_args.num_conv))
 
         if cmd_args.train:  # Only if training is to be performed
             training_set = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/train/',
@@ -114,9 +116,9 @@ class Pipeline:
                 subjectname=filename,
             )
 
-            # vol_transforms = tio.ToCanonical(), tio.Resample(tio.ScalarImage(vol))
-            # transform = tio.Compose(vol_transforms)
-            # subject = transform(subject)
+            vol_transforms = tio.ToCanonical(), tio.Resample('label')
+            transform = tio.Compose(vol_transforms)
+            subject = transform(subject)
             subjects.append(subject)
 
         if get_subjects_only:
@@ -154,10 +156,14 @@ class Pipeline:
         return batch
 
     @staticmethod
-    def apply_transformation(transforms, batch):
-        transform = tio.Compose(transforms)
-        batch = transform(batch)
-        return batch
+    def apply_transformation(transforms, ip):
+        list_tensor = []
+        for idx, batch in enumerate(ip):
+            transformed_batch = batch
+            for transform in transforms:
+                transformed_batch = transform(batch)
+            list_tensor.append(transformed_batch)
+        return torch.stack(list_tensor, dim=0)
 
     def load(self, checkpoint_path=None, load_best=True):
         if checkpoint_path is None:
@@ -211,16 +217,28 @@ class Pipeline:
                     _, indx = seg_loss.sort()
                     _, indx_aug = seg_loss_aug.sort()
 
-                    loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[0:2], :, :, :, :]), local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
-                    loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :], Pipeline.apply_transformation(self.random_transforms, local_labels[indx[0:2], :, :, :, :])).mean()
-                    loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[2:], :, :, :, :]), local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                    loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :], Pipeline.apply_transformation(self.random_transforms, local_labels[indx[2:], :, :, :, :])).mean()
+                    loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                        model_output[indx_aug[0:2], :, :, :, :]),
+                                                        local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
+                    loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
+                                                        Pipeline.apply_transformation(self.random_transforms,
+                                                        local_labels[indx[0:2], :, :, :, :])).mean()
+                    loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                        model_output[indx_aug[2:], :, :, :, :]),
+                                                        local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                    loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
+                                                        Pipeline.apply_transformation(self.random_transforms,
+                                                        local_labels[indx[2:], :, :, :, :])).mean()
 
-                    consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[2:], :, :, :, :]), local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                    consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                              model_output[indx_aug[2:], :, :, :, :]),
+                                                              local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
 
                     loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
 
-                    consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :], Pipeline.apply_transformation(self.random_transforms, local_labels[indx[2:], :, :, :, :])).mean()
+                    consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
+                                                              Pipeline.apply_transformation(self.random_transforms,
+                                                              local_labels[indx[2:], :, :, :, :])).mean()
                     loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
                     total_loss = loss1 + loss2
@@ -255,27 +273,24 @@ class Pipeline:
 
                     self.optimizer1.step()
 
-                    # Calculating gradients for UNet2
-                    if self.with_apex:
-                        self.scaler.scale(loss2).backward()
-
-                        if self.clip_grads:
-                            self.scaler.unscale_(self.optimizer2)
-                            torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                            # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-
-                        self.scaler.step(self.optimizer2)
-                        self.scaler.update()
+                # Calculating gradients for UNet2
+                if self.with_apex:
+                    self.scaler.scale(loss2).backward()
+                    if self.clip_grads:
+                        self.scaler.unscale_(self.optimizer2)
+                        torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
+                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                    self.scaler.step(self.optimizer2)
+                    self.scaler.update()
+                else:
+                    if not torch.any(torch.isnan(loss2)):
+                        loss2.backward()
                     else:
-                        if not torch.any(torch.isnan(loss2)):
-                            loss2.backward()
-                        else:
-                            self.logger.info("nan found in floss.... no backpropagation!!")
-                        if self.clip_grads:
-                            torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                            # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-
-                        self.optimizer2.step()
+                        self.logger.info("nan found in floss.... no backpropagation!!")
+                    if self.clip_grads:
+                        torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
+                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                    self.optimizer2.step()
 
                 training_batch_index += 1
 
@@ -369,31 +384,28 @@ class Pipeline:
                 _, indx = seg_loss.sort()
                 _, indx_aug = seg_loss_aug.sort()
 
-                loss1_seg1 = self.segmentation_loss(
-                    Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[0:2], :, :, :, :]),
-                    local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
+                loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                    model_output[indx_aug[0:2], :, :, :, :]),
+                                                    local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
                 loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
                                                     Pipeline.apply_transformation(self.random_transforms,
-                                                                                  local_labels[indx[0:2], :, :, :,
-                                                                                  :])).mean()
-                loss1_seg2 = self.segmentation_loss(
-                    Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[2:], :, :, :, :]),
-                    local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                                                    local_labels[indx[0:2], :, :, :, :])).mean()
+                loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                    model_output[indx_aug[2:], :, :, :, :]),
+                                                    local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
                 loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
                                                     Pipeline.apply_transformation(self.random_transforms,
-                                                                                  local_labels[indx[2:], :, :, :,
-                                                                                  :])).mean()
+                                                    local_labels[indx[2:], :, :, :, :])).mean()
 
-                consistency_loss1 = self.consistency_loss(
-                    Pipeline.apply_transformation(self.random_transforms, model_output[indx_aug[2:], :, :, :, :]),
-                    local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
+                                                          model_output[indx_aug[2:], :, :, :, :]),
+                                                          local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
 
                 loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
 
                 consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
                                                           Pipeline.apply_transformation(self.random_transforms,
-                                                                                        local_labels[indx[2:], :, :, :,
-                                                                                        :])).mean()
+                                                          local_labels[indx[2:], :, :, :, :])).mean()
                 loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
                 total_loss = loss1 + loss2

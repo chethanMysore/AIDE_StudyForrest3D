@@ -78,7 +78,7 @@ if __name__ == '__main__':
                         help="Batch size for training")
     parser.add_argument("-num_epochs",
                         type=int,
-                        default=20,
+                        default=50,
                         help="Number of epochs for training")
     parser.add_argument("-learning_rate",
                         type=float,

@@ -20,14 +20,24 @@ __status__ = "Development"
 
 
 class SegmentationLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, smooth=1):
         super(SegmentationLoss, self).__init__()
+        self.smooth = smooth
         # Binary cross entropy
         self.BCE_logits_loss = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, y_pred, y_true):
+        iflat = torch.flatten(y_pred, 1)
+        tflat = torch.flatten(y_true, 1)
+        intersection = torch.sum(iflat * tflat, 1)
+        union = torch.sum(iflat + tflat, 1)
+        dice_score = (2. * intersection + self.smooth) / (union + self.smooth)
+        dice_loss = 1 - dice_score
+
+        # Binary cross entropy
         BCE_loss = self.BCE_logits_loss(y_pred, y_true)
-        return BCE_loss
+        seg_loss = dice_loss + (1 * BCE_loss)
+        return seg_loss
 
 
 class ConsistencyLoss(nn.Module):
