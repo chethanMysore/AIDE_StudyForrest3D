@@ -233,7 +233,6 @@ class Pipeline:
                     consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
                                                               model_output[indx_aug[2:], :, :, :, :]),
                                                               local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-
                     loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
 
                     consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
@@ -241,7 +240,7 @@ class Pipeline:
                                                               local_labels[indx[2:], :, :, :, :])).mean()
                     loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
-                    total_loss = loss1 + loss2
+                    final_loss = loss1 + loss2
 
                 # except Exception as error:
                 #     self.logger.exception(error)
@@ -249,7 +248,7 @@ class Pipeline:
 
                 self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
                                  "\n loss1: " + str(loss1) + " loss2: " +
-                                 str(loss2) + " total_loss: " + str(total_loss))
+                                 str(loss2) + " total_loss: " + str(final_loss))
 
                 # Calculating gradients for UNet1
                 if self.with_apex:
@@ -297,7 +296,7 @@ class Pipeline:
                 # Initialising the average loss metrics
                 total_loss1 += loss1.detach().item()
                 total_loss2 += loss2.detach().item()
-                total_loss += total_loss.detach().item()
+                total_loss += final_loss.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
@@ -404,16 +403,16 @@ class Pipeline:
                                                           local_labels[indx[2:], :, :, :, :])).mean()
                 loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
-                total_loss = loss1 + loss2
+                final_loss = loss1 + loss2
 
                 # Log validation losses
                 self.logger.info("Batch_Index:" + str(batch_index) + " Validation..." +
                                  "\n loss1: " + str(loss1) + " loss2: " +
-                                 str(loss2) + " total_loss: " + str(total_loss))
+                                 str(loss2) + " total_loss: " + str(final_loss))
 
                 total_loss1 += loss1.detach().cpu()
                 total_loss2 += loss2.detach().cpu()
-                total_loss += total_loss.detach().cpu()
+                total_loss += final_loss.detach().cpu()
                 model_output = model_output.detach().cpu()
                 model_output_aug = model_output_aug.detach().cpu()
 
