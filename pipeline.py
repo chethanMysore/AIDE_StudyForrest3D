@@ -414,6 +414,9 @@ class Pipeline:
                 total_loss1 += loss1.detach().cpu()
                 total_loss2 += loss2.detach().cpu()
                 total_loss += total_loss.detach().cpu()
+                model_output = model_output.detach().cpu()
+                model_output_aug = model_output_aug.detach().cpu()
+
 
         # Average the losses
         total_loss1 = total_loss1 / no_patches
