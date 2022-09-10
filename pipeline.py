@@ -366,10 +366,6 @@ class Pipeline:
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
 
-            # Clear gradients
-            self.optimizer1.zero_grad()
-            self.optimizer2.zero_grad()
-
             # try:
             with autocast(enabled=self.with_apex):
                 # Get the classification response map(normalized) and respective class assignments after argmax
@@ -415,9 +411,9 @@ class Pipeline:
                                  "\n loss1: " + str(loss1) + " loss2: " +
                                  str(loss2) + " total_loss: " + str(total_loss))
 
-                total_loss1 += loss1
-                total_loss2 += loss2
-                total_loss += total_loss
+                total_loss1 += loss1.detach().cpu()
+                total_loss2 += loss2.detach().cpu()
+                total_loss += total_loss.detach().cpu()
 
         # Average the losses
         total_loss1 = total_loss1 / no_patches
