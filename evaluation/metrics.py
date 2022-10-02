@@ -26,16 +26,24 @@ class SegmentationLoss(nn.Module):
         # Binary cross entropy
         self.BCE_logits_loss = torch.nn.BCEWithLogitsLoss()
 
-    def forward(self, y_pred, y_true):
-        iflat = torch.flatten(y_pred, 1)
+    def forward(self, y_pred, y_true,batch_index=0):
+        y_pred_dice = torch.sigmoid(y_pred)
+        iflat = torch.flatten(y_pred_dice, 1)
         tflat = torch.flatten(y_true, 1)
         intersection = torch.sum(iflat * tflat, 1)
         union = torch.sum(iflat + tflat, 1)
         dice_score = (2. * intersection + self.smooth) / (union + self.smooth)
         dice_loss = 1 - dice_score
+        print("dice_loss", dice_loss)
+        #if torch.any(torch.isnan(dice_loss)):
+            #print("nan value found in dice_loss")
+            #torch.save(y_pred, f'y_pred_{batch_index}.pt')
+            #torch.save(y_true, f"y_true_{batch_index}.pt")
 
         # Binary cross entropy
         BCE_loss = self.BCE_logits_loss(y_pred, y_true)
+        print("BCE_loss", BCE_loss)
+
         seg_loss = dice_loss + (1 * BCE_loss)
         return seg_loss
 
@@ -47,4 +55,8 @@ class ConsistencyLoss(nn.Module):
         self.mseloss = torch.nn.MSELoss(reduction="mean")
 
     def forward(self, inputs, targets):
+        inputs = torch.sigmoid(inputs)
         return self.mseloss(inputs, targets)
+
+
+

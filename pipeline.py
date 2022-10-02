@@ -14,6 +14,7 @@ from glob import glob
 import torchvision as tv
 
 from evaluation.metrics import (SegmentationLoss, ConsistencyLoss)
+from utils.datasets import SRDataset
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
 __author__ = "Chethan Radhakrishna and Soumick Chatterjee"
@@ -79,7 +80,7 @@ class Pipeline:
         self.logger.info("\nLearning Rate: " + str(self.learning_rate))
 
         if cmd_args.train:  # Only if training is to be performed
-            training_set = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/train/',
+            training_set = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/train/',
                                                       label_path=self.DATASET_PATH + '/train_label/',
                                                       patch_size=self.patch_size,
                                                       samples_per_epoch=self.samples_per_epoch,
@@ -87,66 +88,73 @@ class Pipeline:
                                                       stride_depth=self.stride_depth, num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
-            validation_set, num_subjects = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/validate/',
-                                                                      label_path=self.DATASET_PATH + '/validate_label/',
-                                                                      patch_size=self.patch_size,
-                                                                      samples_per_epoch=self.samples_per_epoch,
-                                                                      stride_length=self.stride_length,
-                                                                      stride_width=self.stride_width,
-                                                                      stride_depth=self.stride_depth,
-                                                                      num_worker=self.num_worker,
-                                                                      is_train=False)
-            self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
-                                                               shuffle=False, num_workers=self.num_worker)
+            # validation_set, num_subjects = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/validate/',
+            #                                                           label_path=self.DATASET_PATH + '/validate_label/',
+            #                                                           patch_size=self.patch_size,
+            #                                                           samples_per_epoch=self.samples_per_epoch,
+            #                                                           stride_length=self.stride_length,
+            #                                                           stride_width=self.stride_width,
+            #                                                           stride_depth=self.stride_depth,
+            #                                                           num_worker=self.num_worker,
+            #                                                           is_train=False)
+            # self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
+            #                                                    shuffle=False, num_workers=self.num_worker)
 
     @staticmethod
-    def create_tio_sub_ds(vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width, stride_depth, num_worker,
+    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width, stride_depth, num_worker,
                           is_train=True, get_subjects_only=False):
-
-        vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
-        labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
-        subjects = []
-        for i in range(len(vols)):
-            v = vols[i]
-            filename = os.path.basename(v).split('.')[0]
-            l = [s for s in labels if filename in s][0]
-            subject = tio.Subject(
-                img=tio.ScalarImage(v),
-                label=tio.LabelMap(l),
-                subjectname=filename,
-            )
-
-            vol_transforms = tio.ToCanonical(), tio.Resample('label')
-            transform = tio.Compose(vol_transforms)
-            subject = transform(subject)
-            subjects.append(subject)
-
-        if get_subjects_only:
-            return subjects
-
         if is_train:
-            subjects_dataset = tio.SubjectsDataset(subjects)
-            sampler = tio.data.UniformSampler(patch_size)
-            patches_queue = tio.Queue(
-                subjects_dataset,
-                max_length=(samples_per_epoch // len(subjects)) * 4,
-                samples_per_volume=(samples_per_epoch // len(subjects)),
-                sampler=sampler,
-                num_workers=num_worker,
-                start_background=True
-            )
-            return patches_queue
+            trainDS = SRDataset(logger=logger, patch_size=64,
+                                dir_path=vol_path,
+                                label_dir_path=label_path, pre_load=True,
+                                return_coords=True
+                                )
+            return trainDS
         else:
-            overlap = np.subtract(patch_size, (stride_length, stride_width, stride_depth))
-            grid_samplers = []
-            for i in range(len(subjects)):
-                grid_sampler = tio.inference.GridSampler(
-                    subjects[i],
-                    patch_size,
-                    overlap,
+            vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
+            labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
+            subjects = []
+            for i in range(len(vols)):
+                v = vols[i]
+                filename = os.path.basename(v).split('.')[0]
+                l = [s for s in labels if filename in s][0]
+                subject = tio.Subject(
+                    img=tio.ScalarImage(v),
+                    label=tio.LabelMap(l),
+                    subjectname=filename,
                 )
-                grid_samplers.append(grid_sampler)
-            return torch.utils.data.ConcatDataset(grid_samplers), len(grid_samplers)
+
+                vol_transforms = tio.ToCanonical(), tio.Resample('label')
+                transform = tio.Compose(vol_transforms)
+                subject = transform(subject)
+                subjects.append(subject)
+
+            if get_subjects_only:
+                return subjects
+
+            if is_train:
+                subjects_dataset = tio.SubjectsDataset(subjects)
+                sampler = tio.data.UniformSampler(patch_size)
+                patches_queue = tio.Queue(
+                    subjects_dataset,
+                    max_length=(samples_per_epoch // len(subjects)) * 4,
+                    samples_per_volume=(samples_per_epoch // len(subjects)),
+                    sampler=sampler,
+                    num_workers=num_worker,
+                    start_background=True
+                )
+                return patches_queue
+            else:
+                overlap = np.subtract(patch_size, (stride_length, stride_width, stride_depth))
+                grid_samplers = []
+                for i in range(len(subjects)):
+                    grid_sampler = tio.inference.GridSampler(
+                        subjects[i],
+                        patch_size,
+                        overlap,
+                    )
+                    grid_samplers.append(grid_sampler)
+                return torch.utils.data.ConcatDataset(grid_samplers), len(grid_samplers)
 
     @staticmethod
     def normaliser(batch):
@@ -183,7 +191,7 @@ class Pipeline:
         for epoch in range(self.num_epochs):
             print("Train Epoch: " + str(epoch) + " of " + str(self.num_epochs))
             self.UNet1.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
-            self.UNet2.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
+            # self.UNet2.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
             total_loss1 = 0
             total_loss2 = 0
             total_loss = 0
@@ -191,10 +199,10 @@ class Pipeline:
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-                local_labels = Pipeline.normaliser(patches_batch['label'][tio.DATA].float().cuda())
+                local_labels = patches_batch['label'][tio.DATA].float().cuda()
 
-                local_batch_aug = Pipeline.apply_transformation(self.random_transforms, local_batch)
-                local_labels_aug = Pipeline.apply_transformation(self.random_transforms, local_labels)
+                # local_batch_aug = Pipeline.apply_transformation(self.random_transforms, local_batch)
+                # local_labels_aug = Pipeline.apply_transformation(self.random_transforms, local_labels)
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -207,48 +215,50 @@ class Pipeline:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
                     model_output = self.UNet1(local_batch)
-                    model_output = torch.sigmoid(model_output)
-                    model_output_aug = self.UNet2(local_batch_aug)
-                    model_output_aug = torch.sigmoid(model_output_aug)
+
+                    # model_output_aug = self.UNet2(local_batch_aug)
 
                     seg_loss = self.segmentation_loss(model_output, local_labels)
-                    seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
+                    # seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
 
                     _, indx = seg_loss.sort()
-                    _, indx_aug = seg_loss_aug.sort()
+                    # _, indx_aug = seg_loss_aug.sort()
 
-                    loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                        model_output[indx_aug[0:2], :, :, :, :]),
-                                                        local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
-                    loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
-                                                        Pipeline.apply_transformation(self.random_transforms,
-                                                        local_labels[indx[0:2], :, :, :, :])).mean()
-                    loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                        model_output[indx_aug[2:], :, :, :, :]),
-                                                        local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                    loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
-                                                        Pipeline.apply_transformation(self.random_transforms,
-                                                        local_labels[indx[2:], :, :, :, :])).mean()
+                    # loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                    #                                     model_output[indx_aug[0:2], :, :, :, :]),
+                    #                                     local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
+                    # loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
+                    #                                     Pipeline.apply_transformation(self.random_transforms,
+                    #                                     local_labels[indx[0:2], :, :, :, :])).mean()
+                    # loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
+                    #                                     model_output[indx_aug[2:], :, :, :, :]),
+                    #                                     local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                    # loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
+                    #                                     Pipeline.apply_transformation(self.random_transforms,
+                    #                                     local_labels[indx[2:], :, :, :, :])).mean()
+                    #
+                    # consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
+                    #                                           model_output[indx_aug[2:], :, :, :, :]),
+                    #                                           local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
+                    # loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
+                    loss1 = seg_loss.mean()
+                    #
+                    # consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
+                    #                                           Pipeline.apply_transformation(self.random_transforms,
+                    #                                           local_labels[indx[2:], :, :, :, :])).mean()
+                    # loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
-                    consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                              model_output[indx_aug[2:], :, :, :, :]),
-                                                              local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                    loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
-
-                    consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
-                                                              Pipeline.apply_transformation(self.random_transforms,
-                                                              local_labels[indx[2:], :, :, :, :])).mean()
-                    loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
-
-                    final_loss = loss1 + loss2
+                    # final_loss = loss1 + loss2
 
                 # except Exception as error:
                 #     self.logger.exception(error)
                 #     sys.exit()
 
+                # self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
+                #                  "\n loss1: " + str(seg_loss.mean()) + " loss2: " +
+                #                  str(seg_loss.mean()) + " total_loss: " + str(seg_loss))
                 self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                                 "\n loss1: " + str(loss1) + " loss2: " +
-                                 str(loss2) + " total_loss: " + str(final_loss))
+                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss))
 
                 # Calculating gradients for UNet1
                 if self.with_apex:
@@ -273,51 +283,58 @@ class Pipeline:
                     self.optimizer1.step()
 
                 # Calculating gradients for UNet2
-                if self.with_apex:
-                    self.scaler.scale(loss2).backward()
-                    if self.clip_grads:
-                        self.scaler.unscale_(self.optimizer2)
-                        torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-                    self.scaler.step(self.optimizer2)
-                    self.scaler.update()
-                else:
-                    if not torch.any(torch.isnan(loss2)):
-                        loss2.backward()
-                    else:
-                        self.logger.info("nan found in floss.... no backpropagation!!")
-                    if self.clip_grads:
-                        torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-                    self.optimizer2.step()
+                # if self.with_apex:
+                #     self.scaler.scale(loss2).backward()
+                #     if self.clip_grads:
+                #         self.scaler.unscale_(self.optimizer2)
+                #         torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
+                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                #     self.scaler.step(self.optimizer2)
+                #     self.scaler.update()
+                # else:
+                #     if not torch.any(torch.isnan(loss2)):
+                #         loss2.backward()
+                #     else:
+                #         self.logger.info("nan found in floss.... no backpropagation!!")
+                #     if self.clip_grads:
+                #         torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
+                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                #     self.optimizer2.step()
 
                 training_batch_index += 1
 
                 # Initialising the average loss metrics
                 total_loss1 += loss1.detach().item()
-                total_loss2 += loss2.detach().item()
-                total_loss += final_loss.detach().item()
+                # total_loss2 += loss2.detach().item()
+                # total_loss += final_loss.detach().item()
+                total_loss += total_loss1.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
 
             # Calculate the average loss per batch in one epoch
             total_loss1 /= (batch_index + 1.0)
-            total_loss2 /= (batch_index + 1.0)
-            total_loss /= (batch_index + 1.0)
+            # total_loss2 /= (batch_index + 1.0)
+            # total_loss /= (batch_index + 1.0)
 
             # Print every epoch
             self.logger.info("Epoch:" + str(epoch) + " Average Training..." +
                              "\n loss1: " + str(total_loss1) + " loss2: " +
                              str(total_loss2) + " total_loss: " + str(total_loss))
+            # write_epoch_summary(writer=self.writer_training, index=epoch,
+            #                     loss1=total_loss1,
+            #                     loss2=total_loss2,
+            #                     total_loss=total_loss)
             write_epoch_summary(writer=self.writer_training, index=epoch,
                                 loss1=total_loss1,
-                                loss2=total_loss2,
+                                loss2=None,
                                 total_loss=total_loss)
 
             if self.wandb is not None:
                 self.wandb.log({"loss1_train": total_loss1,
                                 "loss2_train": total_loss2,
+                                "total_loss_train": total_loss})
+                self.wandb.log({"loss1_train": total_loss1,
                                 "total_loss_train": total_loss})
 
             save_model(self.CHECKPOINT_PATH, {
@@ -330,7 +347,7 @@ class Pipeline:
             })
 
             torch.cuda.empty_cache()  # to avoid memory errors
-            self.validate(training_batch_index, epoch)
+            # self.validate(training_batch_index, epoch)
             torch.cuda.empty_cache()  # to avoid memory errors
 
         return self.UNet1, self.UNet2
@@ -369,9 +386,8 @@ class Pipeline:
             with autocast(enabled=self.with_apex):
                 # Get the classification response map(normalized) and respective class assignments after argmax
                 model_output = self.UNet1(local_batch)
-                model_output = torch.sigmoid(model_output)
+
                 model_output_aug = self.UNet2(local_batch_aug)
-                model_output_aug = torch.sigmoid(model_output_aug)
 
                 seg_loss = self.segmentation_loss(model_output, local_labels)
                 seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
