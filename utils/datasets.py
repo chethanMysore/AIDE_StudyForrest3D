@@ -18,7 +18,7 @@ from torch.utils.data import Dataset
 import torchio as tio
 from PIL import Image
 
-from Utils.customutils import createCenterRatioMask, performUndersampling
+from customutils import createCenterRatioMask, performUndersampling
 
 __author__ = "Soumick Chatterjee, Chompunuch Sarasaen"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"
