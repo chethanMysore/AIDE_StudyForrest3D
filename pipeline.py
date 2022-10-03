@@ -327,7 +327,7 @@ class Pipeline:
             #                     total_loss=total_loss)
             write_epoch_summary(writer=self.writer_training, index=epoch,
                                 loss1=total_loss1,
-                                loss2=None,
+                                loss2=total_loss1,
                                 total_loss=total_loss)
 
             if self.wandb is not None:
