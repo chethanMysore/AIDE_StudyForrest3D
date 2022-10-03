@@ -44,16 +44,15 @@ def write_summary(writer, index, loss1=0, loss2=0, total_loss=0):
     writer.add_scalar('TotalLoss', total_loss, index)
 
 
-def write_epoch_summary(writer, index, loss1=0, loss2=0, total_loss=0):
+def write_epoch_summary(writer, index,summary_dict ):
     """
     Method to write summary to the tensorboard.
     index: global_index for the visualisation
     Losses: all losses used as metric
     """
     print('Writing Epoch Summary...')
-    writer.add_scalar('Loss1', loss1, index)
-    writer.add_scalar('Loss2', loss2, index)
-    writer.add_scalar('TotalLossPerEpoch', total_loss, index)
+    for key,val in summary_dict.items():
+        writer.add_scalar(str(key), val, index)
 
 
 def save_model(checkpoint_path, state, filename='checkpoint'):

@@ -28,7 +28,8 @@ __status__ = "Development"
 
 class Pipeline:
 
-    def __init__(self, cmd_args, UNet1, UNet2, logger, dir_path, checkpoint_path, writer_training, writer_validating, wandb=None):
+    def __init__(self, cmd_args, UNet1, UNet2, logger, dir_path, checkpoint_path, writer_training, writer_validating,
+                 wandb=None):
 
         self.UNet1 = UNet1
         self.UNet2 = UNet2
@@ -80,7 +81,7 @@ class Pipeline:
         self.logger.info("\nLearning Rate: " + str(self.learning_rate))
 
         if cmd_args.train:  # Only if training is to be performed
-            training_set = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/train/',
+            training_set = Pipeline.create_tio_sub_ds(logger=self.logger, vol_path=self.DATASET_PATH + '/train/',
                                                       label_path=self.DATASET_PATH + '/train_label/',
                                                       patch_size=self.patch_size,
                                                       samples_per_epoch=self.samples_per_epoch,
@@ -101,7 +102,8 @@ class Pipeline:
             #                                                    shuffle=False, num_workers=self.num_worker)
 
     @staticmethod
-    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width, stride_depth, num_worker,
+    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width,
+                          stride_depth, num_worker,
                           is_train=True, get_subjects_only=False):
         if is_train:
             trainDS = SRDataset(logger=logger, patch_size=64,
@@ -178,11 +180,14 @@ class Pipeline:
             checkpoint_path = self.CHECKPOINT_PATH
 
         if self.with_apex:
-            self.UNet1, self.UNet2, self.optimizer, self.scaler = load_model_with_amp(self.UNet1, self.UNet2, self.optimizer1, self.optimizer2, checkpoint_path,
-                                                                          batch_index="best" if load_best else "last")
+            self.UNet1, self.UNet2, self.optimizer, self.scaler = load_model_with_amp(self.UNet1, self.UNet2,
+                                                                                      self.optimizer1, self.optimizer2,
+                                                                                      checkpoint_path,
+                                                                                      batch_index="best" if load_best else "last")
         else:
-            self.UNet1, self.UNet2, self.optimizer = load_model(self.UNet1, self.UNet2, self.optimizer1, self.optimizer2, checkpoint_path,
-                                                    batch_index="best" if load_best else "last")
+            self.UNet1, self.UNet2, self.optimizer = load_model(self.UNet1, self.UNet2, self.optimizer1,
+                                                                self.optimizer2, checkpoint_path,
+                                                                batch_index="best" if load_best else "last")
 
     def train(self):
         self.logger.debug("Training...")
@@ -260,7 +265,8 @@ class Pipeline:
                 #                  "\n loss1: " + str(seg_loss.mean()) + " loss2: " +
                 #                  str(seg_loss.mean()) + " total_loss: " + str(seg_loss))
                 self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss) + "dice_score " +str(mean_dice_score))
+                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss) + "dice_score " + str(
+                    mean_dice_score))
 
                 # Calculating gradients for UNet1
                 if self.with_apex:
@@ -317,7 +323,7 @@ class Pipeline:
 
             # Calculate the average loss per batch in one epoch
             total_loss1 /= (batch_index + 1.0)
-            total_dice_score /=  (batch_index + 1.0)
+            total_dice_score /= (batch_index + 1.0)
             # total_loss2 /= (batch_index + 1.0)
             # total_loss /= (batch_index + 1.0)
 
@@ -330,9 +336,9 @@ class Pipeline:
             #                     loss2=total_loss2,
             #                     total_loss=total_loss)
             write_epoch_summary(writer=self.writer_training, index=epoch,
-                                loss1=total_loss1,
-                                dice_score=total_dice_score,
-                                total_loss=total_loss)
+                                summary_dict={"loss1": total_loss1,
+                                              "dice_score": total_dice_score,
+                                              "total_loss": total_loss})
 
             if self.wandb is not None:
                 # self.wandb.log({"loss1_train": total_loss1,
@@ -401,27 +407,33 @@ class Pipeline:
                 _, indx_aug = seg_loss_aug.sort()
 
                 loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                    model_output[indx_aug[0:2], :, :, :, :]),
+                                                                                  model_output[indx_aug[0:2], :, :, :,
+                                                                                  :]),
                                                     local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
                 loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
                                                     Pipeline.apply_transformation(self.random_transforms,
-                                                    local_labels[indx[0:2], :, :, :, :])).mean()
+                                                                                  local_labels[indx[0:2], :, :, :,
+                                                                                  :])).mean()
                 loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                    model_output[indx_aug[2:], :, :, :, :]),
+                                                                                  model_output[indx_aug[2:], :, :, :,
+                                                                                  :]),
                                                     local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
                 loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
                                                     Pipeline.apply_transformation(self.random_transforms,
-                                                    local_labels[indx[2:], :, :, :, :])).mean()
+                                                                                  local_labels[indx[2:], :, :, :,
+                                                                                  :])).mean()
 
                 consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
-                                                          model_output[indx_aug[2:], :, :, :, :]),
+                                                                                        model_output[indx_aug[2:], :, :,
+                                                                                        :, :]),
                                                           local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
 
                 loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
 
                 consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
                                                           Pipeline.apply_transformation(self.random_transforms,
-                                                          local_labels[indx[2:], :, :, :, :])).mean()
+                                                                                        local_labels[indx[2:], :, :, :,
+                                                                                        :])).mean()
                 loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
                 final_loss = loss1 + loss2
@@ -436,7 +448,6 @@ class Pipeline:
                 total_loss += final_loss.detach().cpu()
                 model_output = model_output.detach().cpu()
                 model_output_aug = model_output_aug.detach().cpu()
-
 
         # Average the losses
         total_loss1 = total_loss1 / no_patches
