@@ -467,9 +467,9 @@ class Pipeline:
         #                     loss2=total_loss2,
         #                     total_loss=total_loss)
         write_epoch_summary(writer=self.writer_training, index=training_index,
-                            summary_dict={"loss1": total_loss1,
-                                          "dice_score": total_dice_score,
-                                          "total_loss": total_loss})
+                            summary_dict={"loss1_val": total_loss1,
+                                          "dice_score_val": total_dice_score,
+                                          "total_loss_val": total_loss})
 
         if self.wandb is not None:
             # self.wandb.log({"loss1_val": total_loss1,
