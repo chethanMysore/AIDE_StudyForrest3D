@@ -88,7 +88,7 @@ class Pipeline:
                                                       stride_depth=self.stride_depth, num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
-            validation_set, num_subjects = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/validate/',
+            validation_set = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/validate/',
                                                                       label_path=self.DATASET_PATH + '/validate_label/',
                                                                       patch_size=self.patch_size,
                                                                       samples_per_epoch=self.samples_per_epoch,
