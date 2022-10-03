@@ -195,6 +195,7 @@ class Pipeline:
             total_loss1 = 0
             total_loss2 = 0
             total_loss = 0
+            total_dice_score = 0
             batch_index = 0
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
@@ -218,7 +219,7 @@ class Pipeline:
 
                     # model_output_aug = self.UNet2(local_batch_aug)
 
-                    seg_loss = self.segmentation_loss(model_output, local_labels)
+                    seg_loss, dice_score = self.segmentation_loss(model_output, local_labels)
                     # seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
 
                     _, indx = seg_loss.sort()
@@ -242,6 +243,7 @@ class Pipeline:
                     #                                           local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
                     # loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
                     loss1 = seg_loss.mean()
+                    mean_dice_score = dice_score.mean()
                     #
                     # consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
                     #                                           Pipeline.apply_transformation(self.random_transforms,
@@ -258,7 +260,7 @@ class Pipeline:
                 #                  "\n loss1: " + str(seg_loss.mean()) + " loss2: " +
                 #                  str(seg_loss.mean()) + " total_loss: " + str(seg_loss))
                 self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss))
+                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss) + "dice_score " +str(mean_dice_score))
 
                 # Calculating gradients for UNet1
                 if self.with_apex:
@@ -308,43 +310,46 @@ class Pipeline:
                 # total_loss2 += loss2.detach().item()
                 # total_loss += final_loss.detach().item()
                 total_loss += total_loss1
+                total_dice_score += mean_dice_score.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
 
             # Calculate the average loss per batch in one epoch
             total_loss1 /= (batch_index + 1.0)
+            total_dice_score /=  (batch_index + 1.0)
             # total_loss2 /= (batch_index + 1.0)
             # total_loss /= (batch_index + 1.0)
 
             # Print every epoch
             self.logger.info("Epoch:" + str(epoch) + " Average Training..." +
-                             "\n loss1: " + str(total_loss1) + " loss2: " +
-                             str(total_loss2) + " total_loss: " + str(total_loss))
+                             "\n loss1: " + str(total_loss1) + " dice_score: " +
+                             str(total_dice_score) + " total_loss: " + str(total_loss))
             # write_epoch_summary(writer=self.writer_training, index=epoch,
             #                     loss1=total_loss1,
             #                     loss2=total_loss2,
             #                     total_loss=total_loss)
             write_epoch_summary(writer=self.writer_training, index=epoch,
                                 loss1=total_loss1,
-                                loss2=total_loss1,
+                                dice_score=total_dice_score,
                                 total_loss=total_loss)
 
             if self.wandb is not None:
+                # self.wandb.log({"loss1_train": total_loss1,
+                #                 "loss2_train": total_loss2,
+                #                 "total_loss_train": total_loss})
                 self.wandb.log({"loss1_train": total_loss1,
-                                "loss2_train": total_loss2,
-                                "total_loss_train": total_loss})
-                self.wandb.log({"loss1_train": total_loss1,
-                                "total_loss_train": total_loss})
+                                "total_loss_train": total_loss,
+                                "total_dice_score": total_dice_score})
 
-            save_model(self.CHECKPOINT_PATH, {
-                'epoch_type': 'last',
-                'epoch': epoch,
-                # Let is always overwrite, we need just the last checkpoint and best checkpoint(saved after validate)
-                'state_dict': [self.UNet1.state_dict(), self.UNet2.state_dict()],
-                'optimizer': [self.optimizer1.state_dict(), self.optimizer2.state_dict()],
-                'amp': self.scaler.state_dict()
-            })
+            # save_model(self.CHECKPOINT_PATH, {
+            #     'epoch_type': 'last',
+            #     'epoch': epoch,
+            #     # Let is always overwrite, we need just the last checkpoint and best checkpoint(saved after validate)
+            #     'state_dict': [self.UNet1.state_dict(), self.UNet2.state_dict()],
+            #     'optimizer': [self.optimizer1.state_dict(), self.optimizer2.state_dict()],
+            #     'amp': self.scaler.state_dict()
+            # })
 
             torch.cuda.empty_cache()  # to avoid memory errors
             # self.validate(training_batch_index, epoch)

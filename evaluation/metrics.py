@@ -43,7 +43,7 @@ class SegmentationLoss(nn.Module):
         BCE_loss = self.BCE_logits_loss(y_pred, y_true)
 
         seg_loss = dice_loss + (1 * BCE_loss)
-        return seg_loss
+        return seg_loss, dice_score
 
 
 class ConsistencyLoss(nn.Module):
