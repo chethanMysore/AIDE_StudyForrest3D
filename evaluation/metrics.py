@@ -34,7 +34,6 @@ class SegmentationLoss(nn.Module):
         union = torch.sum(iflat + tflat, 1)
         dice_score = (2. * intersection + self.smooth) / (union + self.smooth)
         dice_loss = 1 - dice_score
-        print("dice_loss", dice_loss)
         #if torch.any(torch.isnan(dice_loss)):
             #print("nan value found in dice_loss")
             #torch.save(y_pred, f'y_pred_{batch_index}.pt')
@@ -42,7 +41,6 @@ class SegmentationLoss(nn.Module):
 
         # Binary cross entropy
         BCE_loss = self.BCE_logits_loss(y_pred, y_true)
-        print("BCE_loss", BCE_loss)
 
         seg_loss = dice_loss + (1 * BCE_loss)
         return seg_loss

@@ -307,7 +307,7 @@ class Pipeline:
                 total_loss1 += loss1.detach().item()
                 # total_loss2 += loss2.detach().item()
                 # total_loss += final_loss.detach().item()
-                total_loss += total_loss1.detach().item()
+                total_loss += total_loss1
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
