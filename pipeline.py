@@ -88,17 +88,17 @@ class Pipeline:
                                                       stride_depth=self.stride_depth, num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
-            # validation_set, num_subjects = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/validate/',
-            #                                                           label_path=self.DATASET_PATH + '/validate_label/',
-            #                                                           patch_size=self.patch_size,
-            #                                                           samples_per_epoch=self.samples_per_epoch,
-            #                                                           stride_length=self.stride_length,
-            #                                                           stride_width=self.stride_width,
-            #                                                           stride_depth=self.stride_depth,
-            #                                                           num_worker=self.num_worker,
-            #                                                           is_train=False)
-            # self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
-            #                                                    shuffle=False, num_workers=self.num_worker)
+            validation_set, num_subjects = Pipeline.create_tio_sub_ds(vol_path=self.DATASET_PATH + '/validate/',
+                                                                      label_path=self.DATASET_PATH + '/validate_label/',
+                                                                      patch_size=self.patch_size,
+                                                                      samples_per_epoch=self.samples_per_epoch,
+                                                                      stride_length=self.stride_length,
+                                                                      stride_width=self.stride_width,
+                                                                      stride_depth=self.stride_depth,
+                                                                      num_worker=self.num_worker,
+                                                                      is_train=False)
+            self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
+                                                               shuffle=False, num_workers=self.num_worker)
 
     @staticmethod
     def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width, stride_depth, num_worker,
