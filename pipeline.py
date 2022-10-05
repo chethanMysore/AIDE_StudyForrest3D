@@ -13,7 +13,7 @@ import numpy as np
 from glob import glob
 import torchvision as tv
 
-from evaluation.metrics import (SegmentationLoss, ConsistencyLoss)
+from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyLoss, DiceScore)
 from utils.datasets import SRDataset
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
@@ -28,7 +28,8 @@ __status__ = "Development"
 
 class Pipeline:
 
-    def __init__(self, cmd_args, UNet1, UNet2, logger, dir_path, checkpoint_path, writer_training, writer_validating, wandb=None):
+    def __init__(self, cmd_args, UNet1, UNet2, logger, dir_path, checkpoint_path, writer_training, writer_validating,
+                 wandb=None):
 
         self.UNet1 = UNet1
         self.UNet2 = UNet2
@@ -64,6 +65,8 @@ class Pipeline:
         self.segcor_weight1 = cmd_args.segcor_weight1
         self.segcor_weight2 = cmd_args.segcor_weight2
         self.segmentation_loss = SegmentationLoss()
+        self.focal_tversky_loss = FocalTverskyLoss()
+        self.dice_score = DiceScore()
         self.consistency_loss = ConsistencyLoss()
 
         # Following metrics can be used to evaluate
@@ -80,7 +83,7 @@ class Pipeline:
         self.logger.info("\nLearning Rate: " + str(self.learning_rate))
 
         if cmd_args.train:  # Only if training is to be performed
-            training_set = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/train/',
+            training_set = Pipeline.create_tio_sub_ds(logger=self.logger, vol_path=self.DATASET_PATH + '/train/',
                                                       label_path=self.DATASET_PATH + '/train_label/',
                                                       patch_size=self.patch_size,
                                                       samples_per_epoch=self.samples_per_epoch,
@@ -88,20 +91,21 @@ class Pipeline:
                                                       stride_depth=self.stride_depth, num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
-            validation_set = Pipeline.create_tio_sub_ds(logger=self.logger,vol_path=self.DATASET_PATH + '/validate/',
-                                                                      label_path=self.DATASET_PATH + '/validate_label/',
-                                                                      patch_size=self.patch_size,
-                                                                      samples_per_epoch=self.samples_per_epoch,
-                                                                      stride_length=self.stride_length,
-                                                                      stride_width=self.stride_width,
-                                                                      stride_depth=self.stride_depth,
-                                                                      num_worker=self.num_worker,
-                                                                      is_train=True)
+            validation_set = Pipeline.create_tio_sub_ds(logger=self.logger, vol_path=self.DATASET_PATH + '/validate/',
+                                                        label_path=self.DATASET_PATH + '/validate_label/',
+                                                        patch_size=self.patch_size,
+                                                        samples_per_epoch=self.samples_per_epoch,
+                                                        stride_length=self.stride_length,
+                                                        stride_width=self.stride_width,
+                                                        stride_depth=self.stride_depth,
+                                                        num_worker=self.num_worker,
+                                                        is_train=True)
             self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
                                                                shuffle=False, num_workers=self.num_worker)
 
     @staticmethod
-    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width, stride_depth, num_worker,
+    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width,
+                          stride_depth, num_worker,
                           is_train=True, get_subjects_only=False):
         if is_train:
             trainDS = SRDataset(logger=logger, patch_size=64,
@@ -178,11 +182,14 @@ class Pipeline:
             checkpoint_path = self.CHECKPOINT_PATH
 
         if self.with_apex:
-            self.UNet1, self.UNet2, self.optimizer, self.scaler = load_model_with_amp(self.UNet1, self.UNet2, self.optimizer1, self.optimizer2, checkpoint_path,
-                                                                          batch_index="best" if load_best else "last")
+            self.UNet1, self.UNet2, self.optimizer, self.scaler = load_model_with_amp(self.UNet1, self.UNet2,
+                                                                                      self.optimizer1, self.optimizer2,
+                                                                                      checkpoint_path,
+                                                                                      batch_index="best" if load_best else "last")
         else:
-            self.UNet1, self.UNet2, self.optimizer = load_model(self.UNet1, self.UNet2, self.optimizer1, self.optimizer2, checkpoint_path,
-                                                    batch_index="best" if load_best else "last")
+            self.UNet1, self.UNet2, self.optimizer = load_model(self.UNet1, self.UNet2, self.optimizer1,
+                                                                self.optimizer2, checkpoint_path,
+                                                                batch_index="best" if load_best else "last")
 
     def train(self):
         self.logger.debug("Training...")
@@ -191,9 +198,6 @@ class Pipeline:
         for epoch in range(self.num_epochs):
             print("Train Epoch: " + str(epoch) + " of " + str(self.num_epochs))
             self.UNet1.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
-            # self.UNet2.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
-            total_loss1 = 0
-            total_loss2 = 0
             total_loss = 0
             total_dice_score = 0
             batch_index = 0
@@ -201,9 +205,6 @@ class Pipeline:
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
                 local_labels = patches_batch['label'][tio.DATA].float().cuda()
-
-                # local_batch_aug = Pipeline.apply_transformation(self.random_transforms, local_batch)
-                # local_labels_aug = Pipeline.apply_transformation(self.random_transforms, local_labels)
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -216,55 +217,23 @@ class Pipeline:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
                     model_output = self.UNet1(local_batch)
-
+                    model_output = torch.sigmoid(model_output)
                     # model_output_aug = self.UNet2(local_batch_aug)
 
-                    seg_loss, dice_score = self.segmentation_loss(model_output, local_labels)
-                    # seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
+                    # calculate dice score
+                    dice_score = self.dice_score(model_output, local_labels)
+                    # calculate Ft Loss
+                    ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
-                    _, indx = seg_loss.sort()
-                    # _, indx_aug = seg_loss_aug.sort()
-
-                    # loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                    #                                     model_output[indx_aug[0:2], :, :, :, :]),
-                    #                                     local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
-                    # loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
-                    #                                     Pipeline.apply_transformation(self.random_transforms,
-                    #                                     local_labels[indx[0:2], :, :, :, :])).mean()
-                    # loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                    #                                     model_output[indx_aug[2:], :, :, :, :]),
-                    #                                     local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                    # loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
-                    #                                     Pipeline.apply_transformation(self.random_transforms,
-                    #                                     local_labels[indx[2:], :, :, :, :])).mean()
-                    #
-                    # consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
-                    #                                           model_output[indx_aug[2:], :, :, :, :]),
-                    #                                           local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                    # loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
-                    loss1 = seg_loss.mean()
+                    mean_loss = ft_loss.mean()
                     mean_dice_score = dice_score.mean()
-                    #
-                    # consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
-                    #                                           Pipeline.apply_transformation(self.random_transforms,
-                    #                                           local_labels[indx[2:], :, :, :, :])).mean()
-                    # loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
 
-                    # final_loss = loss1 + loss2
-
-                # except Exception as error:
-                #     self.logger.exception(error)
-                #     sys.exit()
-
-                # self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                #                  "\n loss1: " + str(seg_loss.mean()) + " loss2: " +
-                #                  str(seg_loss.mean()) + " total_loss: " + str(seg_loss))
                 self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                                 "\n loss1: " + str(loss1) + " total_loss: " + str(seg_loss) + "dice_score " +str(mean_dice_score))
+                                 "\n mean_loss: " + str(mean_loss) + " mean_dice_score " + str(mean_dice_score))
 
                 # Calculating gradients for UNet1
                 if self.with_apex:
-                    self.scaler.scale(loss1).backward()
+                    self.scaler.scale(mean_loss).backward()
 
                     if self.clip_grads:
                         self.scaler.unscale_(self.optimizer1)
@@ -274,8 +243,8 @@ class Pipeline:
                     self.scaler.step(self.optimizer1)
                     self.scaler.update()
                 else:
-                    if not torch.any(torch.isnan(loss1)):
-                        loss1.backward()
+                    if not torch.any(torch.isnan(mean_loss)):
+                        mean_loss.backward()
                     else:
                         self.logger.info("nan found in floss.... no backpropagation!!")
                     if self.clip_grads:
@@ -284,63 +253,32 @@ class Pipeline:
 
                     self.optimizer1.step()
 
-                # Calculating gradients for UNet2
-                # if self.with_apex:
-                #     self.scaler.scale(loss2).backward()
-                #     if self.clip_grads:
-                #         self.scaler.unscale_(self.optimizer2)
-                #         torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-                #     self.scaler.step(self.optimizer2)
-                #     self.scaler.update()
-                # else:
-                #     if not torch.any(torch.isnan(loss2)):
-                #         loss2.backward()
-                #     else:
-                #         self.logger.info("nan found in floss.... no backpropagation!!")
-                #     if self.clip_grads:
-                #         torch.nn.utils.clip_grad_norm_(self.UNet2.parameters(), 1)
-                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-                #     self.optimizer2.step()
-
                 training_batch_index += 1
 
                 # Initialising the average loss metrics
-                total_loss1 += loss1.detach().item()
-                # total_loss2 += loss2.detach().item()
-                # total_loss += final_loss.detach().item()
-                total_loss += total_loss1
+                total_loss += mean_loss.detach().item()
                 total_dice_score += mean_dice_score.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
 
             # Calculate the average loss per batch in one epoch
-            total_loss1 /= (batch_index + 1.0)
-            total_dice_score /= (batch_index + 1.0)
-            # total_loss2 /= (batch_index + 1.0)
             total_loss /= (batch_index + 1.0)
+            total_dice_score /= (batch_index + 1.0)
 
             # Print every epoch
             self.logger.info("Epoch:" + str(epoch) + " Average Training..." +
-                             "\n loss1: " + str(total_loss1) + " dice_score: " +
-                             str(total_dice_score) + " total_loss: " + str(total_loss))
-            # write_epoch_summary(writer=self.writer_training, index=epoch,
-            #                     loss1=total_loss1,
-            #                     loss2=total_loss2,
-            #                     total_loss=total_loss)
+                             "\n loss: " + str(total_loss) + " dice_score: " +
+                             str(total_dice_score))
+
             write_epoch_summary(writer=self.writer_training, index=epoch,
-                                summary_dict={"loss1":total_loss1,
-                                "dice_score":total_dice_score,
-                                "total_loss":total_loss})
+                                summary_dict={"Loss": total_loss,
+                                              "DiceScore": total_dice_score
+                                              })
 
             if self.wandb is not None:
-                # self.wandb.log({"loss1_train": total_loss1,
-                #                 "loss2_train": total_loss2,
-                #                 "total_loss_train": total_loss})
-                self.wandb.log({"loss1_train": total_loss1,
-                                "total_loss_train": total_loss,
-                                "total_dice_score": total_dice_score})
+                self.wandb.log({"Loss": total_loss,
+                                "DiceScore": total_dice_score})
 
             # save_model(self.CHECKPOINT_PATH, {
             #     'epoch_type': 'last',
@@ -370,8 +308,6 @@ class Pipeline:
         self.UNet1.eval()
         self.UNet2.eval()
 
-        total_loss1 = 0
-        total_loss2 = 0
         total_loss = 0
         total_dice_score = 0
         no_patches = 0
@@ -382,9 +318,6 @@ class Pipeline:
             local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
             local_labels = Pipeline.normaliser(patches_batch['label'][tio.DATA].float().cuda())
 
-            # local_batch_aug = Pipeline.apply_transformation(self.random_transforms, local_batch)
-            # local_labels_aug = Pipeline.apply_transformation(self.random_transforms, local_labels)
-
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
 
@@ -393,94 +326,43 @@ class Pipeline:
                 # Get the classification response map(normalized) and respective class assignments after argmax
                 model_output = self.UNet1(local_batch)
 
-                # model_output_aug = self.UNet2(local_batch_aug)
+                # calculate dice score
+                dice_score = self.dice_score(model_output, local_labels)
+                # calculate Ft Loss
+                ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
-                seg_loss, dice_score = self.segmentation_loss(model_output, local_labels)
-                # seg_loss_aug = self.segmentation_loss(model_output_aug, local_labels_aug)
+                mean_lose = ft_loss.mean()
+                mean_dice_score = dice_score.mean()
 
-                _, indx = seg_loss.sort()
-                # _, indx_aug = seg_loss_aug.sort()
-
-                # loss1_seg1 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                #                                     model_output[indx_aug[0:2], :, :, :, :]),
-                #                                     local_labels_aug[indx_aug[0:2], :, :, :, :]).mean()
-                # loss2_seg1 = self.segmentation_loss(model_output_aug[indx[0:2], :, :, :, :],
-                #                                     Pipeline.apply_transformation(self.random_transforms,
-                #                                     local_labels[indx[0:2], :, :, :, :])).mean()
-                # loss1_seg2 = self.segmentation_loss(Pipeline.apply_transformation(self.random_transforms,
-                #                                     model_output[indx_aug[2:], :, :, :, :]),
-                #                                     local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                # loss2_seg2 = self.segmentation_loss(model_output_aug[indx[2:], :, :, :, :],
-                #                                     Pipeline.apply_transformation(self.random_transforms,
-                #                                     local_labels[indx[2:], :, :, :, :])).mean()
-                #
-                # consistency_loss1 = self.consistency_loss(Pipeline.apply_transformation(self.random_transforms,
-                #                                           model_output[indx_aug[2:], :, :, :, :]),
-                #                                           local_labels_aug[indx_aug[2:], :, :, :, :]).mean()
-                #
-                # loss1 = (self.segcor_weight1 * (loss1_seg1 + loss1_seg2)) + (self.segcor_weight2 * consistency_loss1)
-                #
-                # consistency_loss2 = self.consistency_loss(model_output_aug[indx[2:], :, :, :, :],
-                #                                           Pipeline.apply_transformation(self.random_transforms,
-                #                                           local_labels[indx[2:], :, :, :, :])).mean()
-                # loss2 = (self.segcor_weight1 * (loss2_seg1 + loss2_seg2)) + (self.segcor_weight2 * consistency_loss2)
-
-                # final_loss = loss1 + loss2
-                loss1 = seg_loss.mean()
-                dice_score = dice_score.mean()
                 # Log validation losses
-                # self.logger.info("Batch_Index:" + str(batch_index) + " Validation..." +
-                #                  "\n loss1: " + str(loss1) + " loss2: " +
-                #                  str(loss2) + " total_loss: " + str(final_loss))
 
                 self.logger.info("Batch_Index:" + str(batch_index) + " Validation..." +
-                                 "\n loss1: " + str(loss1) + " dice_score: " +
-                                 str(dice_score) )
+                                 "\n loss1: " + str(mean_lose) + " dice_score: " +
+                                 str(mean_dice_score))
 
-                total_loss1 += loss1.detach().cpu()
-                # total_loss2 += loss2.detach().cpu()
-                # total_loss += final_loss.detach().cpu()
-                total_loss += loss1.detach().cpu()
-                # model_output = model_output.detach().cpu()
-                # model_output_aug = model_output_aug.detach().cpu()
-                total_dice_score += dice_score.detach().cpu()
-
+                total_loss += mean_lose.detach().cpu()
+                total_dice_score += mean_dice_score.detach().cpu()
 
         # Average the losses
-        total_loss1 = total_loss1 / no_patches
-        # total_loss2 = total_loss2 / no_patches
         total_loss = total_loss / no_patches
         total_dice_score = total_dice_score / no_patches
 
         process = ' Validating'
-        # self.logger.info("Epoch:" + str(training_index) + process + "..." +
-        #                  "\n Loss1:" + str(total_loss1) +
-        #                  "\n total_dice_score:" + str(total_loss2) +
-        #                  "\n total_loss:" + str(total_loss))
         self.logger.info("Epoch:" + str(training_index) + process + "..." +
-                         "\n loss1: " + str(total_loss1) + " dice_score: " +
-                         str(total_dice_score) + " total_loss: " + str(total_loss))
+                         "\n loss: " + str(total_loss) + " dice_score: " +
+                         str(total_dice_score))
 
-        # write_summary(writer, training_index, similarity_loss=total_similarity_loss,
-        #               continuity_loss=total_continuity_loss, total_loss=total_loss)
-        # write_epoch_summary(writer, epoch, loss1=total_loss1,
-        #                     loss2=total_loss2,
-        #                     total_loss=total_loss)
         write_epoch_summary(writer=self.writer_training, index=training_index,
-                            summary_dict={"loss1_val": total_loss1,
-                                          "dice_score_val": total_dice_score,
-                                          "total_loss_val": total_loss})
+                            summary_dict={"loss_val": total_loss,
+                                          "dice_score_val": total_dice_score
+                                          })
 
         if self.wandb is not None:
-            # self.wandb.log({"loss1_val": total_loss1,
-            #                 "loss2_val": total_loss2,
-            #                 "total_loss_val": total_loss})
-            self.wandb.log({"loss1_val": total_loss1,
-                            "total_loss_val": total_loss,
+            self.wandb.log({"loss_val": total_loss,
                             "total_dice_score_val": total_dice_score})
 
-        if self.LOWEST_LOSS > total_loss:  # Save best metric evaluation weights
-            self.LOWEST_LOSS = total_loss
+        if self.LOWEST_LOSS > (1 - total_dice_score):  # Save best metric evaluation weights
+            self.LOWEST_LOSS = (1 - total_dice_score)
             self.logger.info(
                 'Best metric... @ epoch:' + str(training_index) + ' Current Lowest loss:' + str(self.LOWEST_LOSS))
 
