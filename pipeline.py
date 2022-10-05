@@ -325,7 +325,7 @@ class Pipeline:
             with autocast(enabled=self.with_apex):
                 # Get the classification response map(normalized) and respective class assignments after argmax
                 model_output = self.UNet1(local_batch)
-
+                model_output = torch.sigmoid(model_output)
                 # calculate dice score
                 dice_score = self.dice_score(model_output, local_labels)
                 # calculate Ft Loss
