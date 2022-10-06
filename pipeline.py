@@ -248,11 +248,11 @@ class Pipeline:
                     mean_dice_score_aug = dice_score_aug.mean()
 
                     total_mean_loss = mean_loss_aug + mean_loss
-                    total_dice_score = (dice_score_aug + dice_score) / 2
+                    total_dice_score = (mean_dice_score_aug + mean_dice_score) / 2
 
                 self.logger.info(f"Epoch: {str(epoch)} Batch Index: {str(batch_index)} Training.. "
                                  f"\n mean_loss {str(mean_loss)} mean_loss_aug {str(mean_loss_aug)} "
-                                 f"\n mean_dice_score {str(dice_score)} mean_dice_score_aug {str(mean_dice_score_aug)} "
+                                 f"\n mean_dice_score {str(mean_dice_score)} mean_dice_score_aug {str(mean_dice_score_aug)} "
                                  f"\n total_mean_loss {str(total_mean_loss)} total_dice_score {str(total_dice_score)}")
                 # Calculating gradients for UNet1
                 if self.with_apex:
