@@ -217,8 +217,7 @@ class Pipeline:
                 aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
                 local_batch = local_batch.float().cuda()
                 local_labels = local_labels.float().cuda()
-                aug_batch = aug_batch.float().cuda()
-                aug_labels = aug_labels.float().cuda()
+                aug_batch = aug_batch.float()
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -258,7 +257,7 @@ class Pipeline:
 
                     # convert subjects to tensors
                     model_output_aug = subjects_to_tensors(pred_subject)
-
+                    model_output_aug = model_output_aug.cuda()
                     # calculate dice score
                     dice_score_aug = self.dice_score(model_output_aug, local_labels)
                     # calculate Ft Loss
