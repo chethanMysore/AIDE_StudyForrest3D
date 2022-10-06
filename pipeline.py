@@ -257,7 +257,7 @@ class Pipeline:
 
                     # convert subjects to tensors
                     model_output_aug = subjects_to_tensors(pred_subject)
-                    model_output_aug = model_output_aug.cuda()
+                    model_output_aug = model_output_aug
                     # calculate dice score
                     dice_score_aug = self.dice_score(model_output_aug, local_labels)
                     # calculate Ft Loss
