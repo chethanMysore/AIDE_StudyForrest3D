@@ -14,7 +14,7 @@ from glob import glob
 import torchvision as tv
 
 from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyLoss, DiceScore)
-from utils.customutils import subjects_to_tensors
+from utils.customutils import subjects_to_tensors, tensors_to_subjects
 from utils.datasets import SRDataset
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
@@ -201,14 +201,16 @@ class Pipeline:
                 # Transform images
                 subjects = []
                 aug_subjects = []
+                inverse_transform_functions = []
                 for img, label in zip(local_batch, local_labels):
                     img = tio.ScalarImage(tensor=img)
                     label = tio.LabelMap(tensor=label)
                     subject = tio.Subject(img=img, label=label)
                     subjects.append(subject)
-                    transform = tio.RandomFlip(axes=('LR',), flip_probability=0.75)
+                    transform = tio.RandomFlip(axes=('LR',), flip_probability=1)
                     transformed_subjects = transform(subject)
                     aug_subjects.append(transformed_subjects)
+                    inverse_transform_functions.append(transformed_subjects.get_inverse_transform())
 
                 # convert subjects to tensors
                 local_batch, local_labels = subjects_to_tensors(subjects)
@@ -241,7 +243,21 @@ class Pipeline:
                     mean_dice_score = dice_score.mean()
 
                     model_output_aug = self.UNet1(aug_batch)
-                    model_output_aug = model_output_aug.apply_inverse_transform()
+
+                    # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
+
+                    # convert tensors to subjects
+                    model_output_aug_subjects = tensors_to_subjects(model_output_aug)
+
+                    assert len(model_output_aug_subjects) == len(inverse_transform_functions), "pred and inversefunction dont match"
+
+                    #apply inverse function to subjects
+                    pred_subjects = []
+                    for pred_subject, inverse_function in zip(model_output_aug_subjects,inverse_transform_functions):
+                        pred_subjects.append(inverse_function(pred_subject))
+
+                    # convert subjects to tensors
+                    model_output_aug = subjects_to_tensors(pred_subject)
 
                     # calculate dice score
                     dice_score_aug = self.dice_score(model_output_aug, local_labels)

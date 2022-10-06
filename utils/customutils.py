@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.io as sio
 import torch
+import torchio as tio
 
 __author__ = "Soumick Chatterjee, Chompunuch Sarasaen"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"
@@ -111,3 +112,10 @@ def subjects_to_tensors(list_subject):
     patches = torch.stack([subject['img'].data for subject in list_subject])
     labels = torch.stack([subject['label'].data for subject in list_subject])
     return patches, labels
+
+
+def tensors_to_subjects(tensor_list):
+    subjects_list = []
+    for ten in tensor_list:
+        subjects_list.append(tio.Subject(pred=tio.LabelMap(tensor=ten)))
+    return subjects_list
