@@ -369,7 +369,8 @@ class Pipeline:
             self.logger.info("loading" + str(batch_index))
             no_patches += 1
             local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-            local_labels = Pipeline.normaliser(patches_batch['label'][tio.DATA].float().cuda())
+            local_labels = patches_batch['label'][tio.DATA].float().cuda()
+
 
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
