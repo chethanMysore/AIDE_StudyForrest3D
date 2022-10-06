@@ -34,6 +34,7 @@ np.random.seed(2020)
 seed(2020)
 
 
+
 class SRDataset(Dataset):
 
     def __init__(self, logger, patch_size, dir_path, label_dir_path, stride_depth=16, stride_length=32, stride_width=32,
@@ -150,7 +151,7 @@ class SRDataset(Dataset):
                 pre_loaded_lbl = np.append(pre_loaded_lbl,
                                            {'subjectname': labelFileName, 'data': labelFile.data})
                 pre_loaded_lbl_mip = np.append(pre_loaded_lbl_mip,
-                                                {'subjectname': label_filename_trimmed, 'data': labelFile_mip})
+                                               {'subjectname': label_filename_trimmed, 'data': labelFile_mip})
 
             if patch_size != 1 and (n_depth < patch_size or n_length < patch_size or n_width < patch_size):
                 self.logger.debug(
@@ -382,7 +383,7 @@ class SRDataset(Dataset):
             trimmed_label_filename = (self.data.iloc[index, 3]).split("\\")
             trimmed_label_filename = trimmed_label_filename[len(trimmed_label_filename) - 1]
             ground_truth_mip = [lbl for lbl in self.pre_loaded_data['pre_loaded_lbl_mip'] if
-                                 lbl['subjectname'] == trimmed_label_filename][0]['data']
+                                lbl['subjectname'] == trimmed_label_filename][0]['data']
             ground_truth_mip_patch = ground_truth_mip[startIndex_width:startIndex_width + self.patch_size,
                                      startIndex_length:startIndex_length + self.patch_size]
             pad = ()
@@ -391,7 +392,8 @@ class SRDataset(Dataset):
                 pad_needed = self.patch_size - target_shape[dim]
                 pad_dim = (pad_needed // 2, pad_needed - (pad_needed // 2))
                 pad += pad_dim
-            ground_truth_mip_patch = torch.nn.functional.pad(ground_truth_mip_patch, pad[:6], value=np.finfo(np.float).eps)
+            ground_truth_mip_patch = torch.nn.functional.pad(ground_truth_mip_patch, pad[:6],
+                                                             value=np.finfo(np.float).eps)
 
             subject = tio.Subject(
                 img=tio.ScalarImage(tensor=patch),

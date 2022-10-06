@@ -107,58 +107,49 @@ class Pipeline:
     def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width,
                           stride_depth, num_worker,
                           is_train=True, get_subjects_only=False):
-        if is_train:
-            trainDS = SRDataset(logger=logger, patch_size=64,
-                                dir_path=vol_path,
-                                label_dir_path=label_path, pre_load=True,
-                                return_coords=True
-                                )
-            return trainDS
-        else:
-            vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
-            labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
-            subjects = []
-            for i in range(len(vols)):
-                v = vols[i]
-                filename = os.path.basename(v).split('.')[0]
-                l = [s for s in labels if filename in s][0]
-                subject = tio.Subject(
-                    img=tio.ScalarImage(v),
-                    label=tio.LabelMap(l),
-                    subjectname=filename,
-                )
 
-                vol_transforms = tio.ToCanonical(), tio.Resample('label')
-                transform = tio.Compose(vol_transforms)
-                subject = transform(subject)
-                subjects.append(subject)
+        # trainDS = SRDataset(logger=logger, patch_size=64,
+        #                     dir_path=vol_path,
+        #                     label_dir_path=label_path, pre_load=True,
+        #                     return_coords=True
+        #                     )
+        # return trainDS
+        vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
+        labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
+        subjects = []
+        for i in range(len(vols)):
+            v = vols[i]
+            filename = os.path.basename(v).split('.')[0]
+            l = [s for s in labels if filename in s][0]
+            # to fix spacing issue between img(0.30) and label(1.0). Dont use resample as it messes up img and label
+            # patch
+            t1 = tio.ScalarImage(v)
+            t1 = t1.data[:, :, :, :]
+            t1 = tio.ScalarImage(tensor=t1)
+            t2 = tio.LabelMap(l)
+            t2 = t2.data[:, :, :, :]
+            t2 = tio.LabelMap(tensor=t2)
+            subject = tio.Subject(
+                img=t1,
+                label=t2,
+                subjectname=filename,
+            )
+            subjects.append(subject)
 
-            if get_subjects_only:
-                return subjects
+        if get_subjects_only:
+            return subjects
 
-            if is_train:
-                subjects_dataset = tio.SubjectsDataset(subjects)
-                sampler = tio.data.UniformSampler(patch_size)
-                patches_queue = tio.Queue(
-                    subjects_dataset,
-                    max_length=(samples_per_epoch // len(subjects)) * 4,
-                    samples_per_volume=(samples_per_epoch // len(subjects)),
-                    sampler=sampler,
-                    num_workers=num_worker,
-                    start_background=True
-                )
-                return patches_queue
-            else:
-                overlap = np.subtract(patch_size, (stride_length, stride_width, stride_depth))
-                grid_samplers = []
-                for i in range(len(subjects)):
-                    grid_sampler = tio.inference.GridSampler(
-                        subjects[i],
-                        patch_size,
-                        overlap,
-                    )
-                    grid_samplers.append(grid_sampler)
-                return torch.utils.data.ConcatDataset(grid_samplers), len(grid_samplers)
+        subjects_dataset = tio.SubjectsDataset(subjects)
+        sampler = tio.data.UniformSampler(patch_size)
+        patches_queue = tio.Queue(
+            subjects_dataset,
+            max_length=(samples_per_epoch // len(subjects)) * 4,
+            samples_per_volume=(samples_per_epoch // len(subjects)),
+            sampler=sampler,
+            num_workers=num_worker,
+            start_background=True
+        )
+        return patches_queue
 
     @staticmethod
     def normaliser(batch):
