@@ -18,8 +18,6 @@ __maintainer__ = "Chethan Radhakrishna"
 __email__ = "chethan.radhakrishna@st.ovgu.de"
 __status__ = "Development"
 
-import torchio
-
 
 class conv_block(nn.Module):
     """
@@ -134,4 +132,4 @@ class U_Net(nn.Module):
         d2 = self.Up_conv2(d2)
         out = self.Conv(d2)
 
-        return torchio.Subjectout
+        return out
