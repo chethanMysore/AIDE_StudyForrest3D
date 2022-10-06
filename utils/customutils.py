@@ -107,7 +107,7 @@ def performUndersamplingKSP(fullKSPVol, mask=None, maskmatpath=None, zeropad=Tru
     return underKSPVol
 
 
-def subjects_to_tensors(self, list_subject):
+def subjects_to_tensors(list_subject):
     patches = torch.stack([subject['img'].data for subject in list_subject])
     labels = torch.stack([subject['label'].data for subject in list_subject])
     return patches, labels
