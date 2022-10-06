@@ -246,14 +246,14 @@ class Pipeline:
                     # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
 
                     # convert tensors to subjects
-                    model_output_aug_subjects = tensors_to_subjects(model_output_aug)
+                    model_output_aug_subjects = tensors_to_subjects(model_output_aug.cpu())
 
                     assert len(model_output_aug_subjects) == len(inverse_transform_functions), "pred and inversefunction dont match"
 
                     #apply inverse function to subjects
                     pred_subjects = []
                     for pred_subject, inverse_function in zip(model_output_aug_subjects,inverse_transform_functions):
-                        pred_subjects.append(inverse_function(pred_subject.cpu()))
+                        pred_subjects.append(inverse_function(pred_subject))
 
                     # convert subjects to tensors
                     model_output_aug = subjects_to_tensors(pred_subject)
