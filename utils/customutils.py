@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.io as sio
+import torch
 
 __author__ = "Soumick Chatterjee, Chompunuch Sarasaen"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"
@@ -104,3 +105,9 @@ def performUndersamplingKSP(fullKSPVol, mask=None, maskmatpath=None, zeropad=Tru
                 underKSPVol.append(temp[:, i, ...])
         underKSPVol = np.array(underKSPVol).swapaxes(0, 1)
     return underKSPVol
+
+
+def subjects_to_tensors(self, list_subject):
+    patches = torch.stack([subject['img'].data for subject in list_subject])
+    labels = torch.stack([subject['label'].data for subject in list_subject])
+    return patches, labels

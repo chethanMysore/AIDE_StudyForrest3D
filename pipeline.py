@@ -14,6 +14,7 @@ from glob import glob
 import torchvision as tv
 
 from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyLoss, DiceScore)
+from utils.customutils import subjects_to_tensors
 from utils.datasets import SRDataset
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
@@ -197,6 +198,22 @@ class Pipeline:
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
                 local_labels = patches_batch['label'][tio.DATA].float().cuda()
 
+                # Transform images
+                subjects = []
+                aug_subjects = []
+                for img, label in zip(local_batch, local_labels):
+                    img = tio.ScalarImage(tensor=img)
+                    label = tio.LabelMap(tensor=label)
+                    subject = tio.Subject(img=img, label=label)
+                    subjects.append(subject)
+                    transform = tio.RandomFlip(axes=('LR',), flip_probability=0.25)
+                    transformed_subjects = transform(subject)
+                    aug_subjects.append(transformed_subjects)
+
+                # convert subjects to tensors
+                local_batch, local_labels = subjects_to_tensors(subjects)
+                aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
+
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
 
@@ -216,15 +233,30 @@ class Pipeline:
                     # calculate Ft Loss
                     ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
-                    mean_loss = ft_loss.mean()
+                    mean_loss = ((1 - dice_score) * ft_loss).mean()
                     mean_dice_score = dice_score.mean()
 
-                self.logger.info("Epoch:" + str(epoch) + " Batch_Index:" + str(batch_index) + " Training..." +
-                                 "\n mean_loss: " + str(mean_loss) + " mean_dice_score " + str(mean_dice_score))
+                    model_output_aug = self.UNet1(aug_batch)
+                    model_output_aug = model_output_aug.apply_inverse_transform()
 
+                    # calculate dice score
+                    dice_score_aug = self.dice_score(model_output_aug, local_labels)
+                    # calculate Ft Loss
+                    ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
+
+                    mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
+                    mean_dice_score_aug = dice_score_aug.mean()
+
+                    total_mean_loss = mean_loss_aug + mean_loss
+                    total_dice_score = (dice_score_aug + dice_score) / 2
+
+                self.logger.info(f"Epoch: {str(epoch)} Batch Index: {str(batch_index)} Training.. "
+                                 f"\n mean_loss {str(mean_loss)} mean_loss_aug {str(mean_loss_aug)} "
+                                 f"\n mean_dice_score {str(dice_score)} mean_dice_score_aug {str(mean_dice_score_aug)} "
+                                 f"\n total_mean_loss {str(total_mean_loss)} total_dice_score {str(total_dice_score)}")
                 # Calculating gradients for UNet1
                 if self.with_apex:
-                    self.scaler.scale(mean_loss).backward()
+                    self.scaler.scale(total_mean_loss).backward()
 
                     if self.clip_grads:
                         self.scaler.unscale_(self.optimizer1)
@@ -234,8 +266,8 @@ class Pipeline:
                     self.scaler.step(self.optimizer1)
                     self.scaler.update()
                 else:
-                    if not torch.any(torch.isnan(mean_loss)):
-                        mean_loss.backward()
+                    if not torch.any(torch.isnan(total_mean_loss)):
+                        total_mean_loss.backward()
                     else:
                         self.logger.info("nan found in floss.... no backpropagation!!")
                     if self.clip_grads:
@@ -247,8 +279,8 @@ class Pipeline:
                 training_batch_index += 1
 
                 # Initialising the average loss metrics
-                total_loss += mean_loss.detach().item()
-                total_dice_score += mean_dice_score.detach().item()
+                total_loss += total_mean_loss.detach().item()
+                total_dice_score += total_dice_score.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
