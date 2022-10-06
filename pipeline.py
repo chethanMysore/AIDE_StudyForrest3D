@@ -250,7 +250,7 @@ class Pipeline:
                     mean_dice_score = dice_score.mean()
 
                     model_output_aug = self.UNet1(aug_batch)
-
+                    model_output_aug = torch.sigmoid(model_output)
                     ########################################################################################
                     # # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
                     #
