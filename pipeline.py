@@ -234,9 +234,9 @@ class Pipeline:
                     # model_output_aug = self.UNet2(local_batch_aug)
 
                     # calculate dice score
-                    dice_score = self.dice_score(model_output, local_labels)
+                    dice_score = self.dice_score(model_output.cuda(), local_labels.cuda())
                     # calculate Ft Loss
-                    ft_loss = self.focal_tversky_loss(model_output, local_labels)
+                    ft_loss = self.focal_tversky_loss(model_output.cuda(), local_labels.cuda())
 
                     mean_loss = ((1 - dice_score) * ft_loss).mean()
                     mean_dice_score = dice_score.mean()
