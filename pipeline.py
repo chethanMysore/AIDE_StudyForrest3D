@@ -195,8 +195,8 @@ class Pipeline:
             batch_index = 0
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
-                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-                local_labels = patches_batch['label'][tio.DATA].float().cuda()
+                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
+                local_labels = patches_batch['label'][tio.DATA].float()
 
                 # Transform images
                 subjects = []
@@ -206,13 +206,17 @@ class Pipeline:
                     label = tio.LabelMap(tensor=label)
                     subject = tio.Subject(img=img, label=label)
                     subjects.append(subject)
-                    transform = tio.RandomFlip(axes=('LR',), flip_probability=0.25)
+                    transform = tio.RandomFlip(axes=('LR',), flip_probability=0.75)
                     transformed_subjects = transform(subject)
                     aug_subjects.append(transformed_subjects)
 
                 # convert subjects to tensors
                 local_batch, local_labels = subjects_to_tensors(subjects)
                 aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
+                local_batch = local_batch.float().cuda()
+                local_labels = local_labels.float().cuda()
+                aug_batch = aug_batch.float().cuda()
+                aug_labels = aug_labels.float().cuda()
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
