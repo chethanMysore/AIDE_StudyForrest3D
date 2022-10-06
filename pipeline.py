@@ -215,8 +215,8 @@ class Pipeline:
                 # convert subjects to tensors
                 local_batch, local_labels = subjects_to_tensors(subjects)
                 aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
-                local_batch = local_batch.float().cuda()
-                local_labels = local_labels.float().cuda()
+                local_batch = local_batch.float()
+                local_labels = local_labels.float()
                 aug_batch = aug_batch.float()
 
                 # Transfer to GPU
