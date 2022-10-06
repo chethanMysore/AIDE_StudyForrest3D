@@ -234,9 +234,9 @@ class Pipeline:
                     # model_output_aug = self.UNet2(local_batch_aug)
 
                     # calculate dice score
-                    dice_score = self.dice_score(model_output.cuda(), local_labels.cuda())
+                    dice_score = self.dice_score(model_output.cpu(), local_labels.cpu())
                     # calculate Ft Loss
-                    ft_loss = self.focal_tversky_loss(model_output.cuda(), local_labels.cuda())
+                    ft_loss = self.focal_tversky_loss(model_output.cpu(), local_labels.cpu())
 
                     mean_loss = ((1 - dice_score) * ft_loss).mean()
                     mean_dice_score = dice_score.mean()
@@ -259,9 +259,9 @@ class Pipeline:
                     model_output_aug = subjects_to_tensors(pred_subject)
                     model_output_aug = model_output_aug
                     # calculate dice score
-                    dice_score_aug = self.dice_score(model_output_aug.cuda(), local_labels.cuda())
+                    dice_score_aug = self.dice_score(model_output_aug.cpu(), local_labels.cpu())
                     # calculate Ft Loss
-                    ft_loss_aug = self.focal_tversky_loss(model_output_aug.cuda(), local_labels.cuda())
+                    ft_loss_aug = self.focal_tversky_loss(model_output_aug.cpu(), local_labels.cpu())
 
                     mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
                     mean_dice_score_aug = dice_score_aug.mean()
