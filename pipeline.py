@@ -101,7 +101,7 @@ class Pipeline:
                                                         num_worker=self.num_worker,
                                                         is_train=True)
             self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
-                                                               shuffle=False, num_workers=self.num_worker)
+                                                               shuffle=False, num_workers=0)
 
     @staticmethod
     def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width,
@@ -146,7 +146,7 @@ class Pipeline:
             max_length=(samples_per_epoch // len(subjects)) * 4,
             samples_per_volume=(samples_per_epoch // len(subjects)),
             sampler=sampler,
-            num_workers=num_worker,
+            num_workers=0,
             start_background=True
         )
         return patches_queue
