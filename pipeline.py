@@ -278,12 +278,12 @@ class Pipeline:
                     mean_dice_score_aug = dice_score_aug.mean()
 
                     total_mean_loss = mean_loss_aug + mean_loss
-                    total_dice_score = (mean_dice_score_aug + mean_dice_score) / 2
+                    total_mean_dice_score = (mean_dice_score_aug + mean_dice_score) / 2
 
                 self.logger.info(f"Epoch: {str(epoch)} Batch Index: {str(batch_index)} Training.. "
                                  f"\n mean_loss {str(mean_loss)} mean_loss_aug {str(mean_loss_aug)} "
                                  f"\n mean_dice_score {str(mean_dice_score)} mean_dice_score_aug {str(mean_dice_score_aug)} "
-                                 f"\n total_mean_loss {str(total_mean_loss)} total_dice_score {str(total_dice_score)}")
+                                 f"\n total_mean_loss {str(total_mean_loss)} total_dice_score {str(total_mean_dice_score)}")
                 # Calculating gradients for UNet1
                 if self.with_apex:
                     self.scaler.scale(total_mean_loss).backward()
@@ -310,7 +310,7 @@ class Pipeline:
 
                 # Initialising the average loss metrics
                 total_loss += total_mean_loss.detach().item()
-                total_dice_score += total_dice_score.detach().item()
+                total_dice_score += total_mean_dice_score.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
