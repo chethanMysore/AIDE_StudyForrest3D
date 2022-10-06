@@ -133,9 +133,13 @@ class Pipeline:
             subject = tio.Subject(
                 img=t1,
                 label=t2,
+                aug_img=t1,
+                aug_label=t2,
                 subjectname=filename,
             )
-            subjects.append(subject)
+            transforms = tio.RandomFlip(axes=('LR',), flip_probability=1,exclude=["img","label"])
+            transformed_subject = transforms(subject)
+            subjects.append(transformed_subject)
 
         if get_subjects_only:
             return subjects
@@ -195,29 +199,33 @@ class Pipeline:
             batch_index = 0
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
-                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
-                local_labels = patches_batch['label'][tio.DATA].float()
+                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
+                local_labels = patches_batch['label'][tio.DATA].float().cuda()
+                aug_batch = Pipeline.normaliser(patches_batch['aug_img'][tio.DATA].float().cuda())
+                aug_labels = patches_batch['aug_label'][tio.DATA].float().cuda()
 
-                # Transform images
-                subjects = []
-                aug_subjects = []
-                inverse_transform_functions = []
-                for img, label in zip(local_batch, local_labels):
-                    img = tio.ScalarImage(tensor=img)
-                    label = tio.LabelMap(tensor=label)
-                    subject = tio.Subject(img=img, label=label)
-                    subjects.append(subject)
-                    transform = tio.RandomFlip(axes=('LR',), flip_probability=1)
-                    transformed_subjects = transform(subject)
-                    aug_subjects.append(transformed_subjects)
-                    inverse_transform_functions.append(transformed_subjects.get_inverse_transform())
-
-                # convert subjects to tensors
-                local_batch, local_labels = subjects_to_tensors(subjects)
-                aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
-                local_batch = local_batch.float()
-                local_labels = local_labels.float()
-                aug_batch = aug_batch.float()
+                ###############################################################################
+                # # Transform images
+                # subjects = []
+                # aug_subjects = []
+                # inverse_transform_functions = []
+                # for img, label in zip(local_batch, local_labels):
+                #     img = tio.ScalarImage(tensor=img)
+                #     label = tio.LabelMap(tensor=label)
+                #     subject = tio.Subject(img=img, label=label)
+                #     subjects.append(subject)
+                #     transform = tio.RandomFlip(axes=('LR',), flip_probability=1)
+                #     transformed_subjects = transform(subject)
+                #     aug_subjects.append(transformed_subjects)
+                #     inverse_transform_functions.append(transformed_subjects.get_inverse_transform())
+                #
+                # # convert subjects to tensors
+                # local_batch, local_labels = subjects_to_tensors(subjects)
+                # aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
+                # local_batch = local_batch.float()
+                # local_labels = local_labels.float()
+                # aug_batch = aug_batch.float()
+                ########################################################################################
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -234,34 +242,37 @@ class Pipeline:
                     # model_output_aug = self.UNet2(local_batch_aug)
 
                     # calculate dice score
-                    dice_score = self.dice_score(model_output.cpu(), local_labels.cpu())
+                    dice_score = self.dice_score(model_output, local_labels)
                     # calculate Ft Loss
-                    ft_loss = self.focal_tversky_loss(model_output.cpu(), local_labels.cpu())
+                    ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
                     mean_loss = ((1 - dice_score) * ft_loss).mean()
                     mean_dice_score = dice_score.mean()
 
                     model_output_aug = self.UNet1(aug_batch)
 
-                    # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
+                    ########################################################################################
+                    # # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
+                    #
+                    # # convert tensors to subjects
+                    # model_output_aug_subjects = tensors_to_subjects(model_output_aug.cpu())
+                    #
+                    # assert len(model_output_aug_subjects) == len(inverse_transform_functions), "pred and inversefunction dont match"
+                    #
+                    # #apply inverse function to subjects
+                    # pred_subjects = []
+                    # for pred_subject, inverse_function in zip(model_output_aug_subjects,inverse_transform_functions):
+                    #     pred_subjects.append(inverse_function(pred_subject))
+                    #
+                    # # convert subjects to tensors
+                    # model_output_aug = subjects_to_tensors(pred_subject)
+                    # model_output_aug = model_output_aug
+                    ##########################################################################################
 
-                    # convert tensors to subjects
-                    model_output_aug_subjects = tensors_to_subjects(model_output_aug.cpu())
-
-                    assert len(model_output_aug_subjects) == len(inverse_transform_functions), "pred and inversefunction dont match"
-
-                    #apply inverse function to subjects
-                    pred_subjects = []
-                    for pred_subject, inverse_function in zip(model_output_aug_subjects,inverse_transform_functions):
-                        pred_subjects.append(inverse_function(pred_subject))
-
-                    # convert subjects to tensors
-                    model_output_aug = subjects_to_tensors(pred_subject)
-                    model_output_aug = model_output_aug
                     # calculate dice score
-                    dice_score_aug = self.dice_score(model_output_aug.cpu(), local_labels.cpu())
+                    dice_score_aug = self.dice_score(model_output_aug, aug_labels)
                     # calculate Ft Loss
-                    ft_loss_aug = self.focal_tversky_loss(model_output_aug.cpu(), local_labels.cpu())
+                    ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
 
                     mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
                     mean_dice_score_aug = dice_score_aug.mean()
