@@ -343,7 +343,7 @@ class Pipeline:
                          "\n loss: " + str(total_loss) + " dice_score: " +
                          str(total_dice_score))
 
-        write_epoch_summary(writer=self.writer_training, index=training_index,
+        write_epoch_summary(writer=self.writer_training, index=epoch,
                             summary_dict={"loss_val": total_loss,
                                           "dice_score_val": total_dice_score
                                           })
