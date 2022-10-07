@@ -438,8 +438,8 @@ class Pipeline:
         test_logger.debug('Testing...')
 
         if test_subjects is None:
-            test_folder_path = self.DATASET_FOLDER + '/test/'
-            test_label_path = self.DATASET_FOLDER + '/test_label/'
+            test_folder_path = self.DATASET_PATH + '/test/'
+            test_label_path = self.DATASET_PATH + '/test_label/'
 
             test_subjects = self.create_TIOSubDS(vol_path=test_folder_path, label_path=test_label_path,
                                                  get_subjects_only=True)
