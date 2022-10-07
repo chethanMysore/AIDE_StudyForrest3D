@@ -71,7 +71,6 @@ class Pipeline:
         self.focal_tversky_loss = FocalTverskyLoss()
         self.dice_score = DiceScore()
         self.consistency_loss = ConsistencyLoss()
-        self.loss
 
         # Following metrics can be used to evaluate
         # self.dice = Dice()
