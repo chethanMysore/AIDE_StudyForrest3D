@@ -90,26 +90,21 @@ class Pipeline:
                                                       label_path=self.DATASET_PATH + '/train_label/',
                                                       patch_size=self.patch_size,
                                                       samples_per_epoch=self.samples_per_epoch,
-                                                      stride_length=self.stride_length, stride_width=self.stride_width,
-                                                      stride_depth=self.stride_depth, num_worker=self.num_worker)
+                                                      num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
             validation_set = Pipeline.create_tio_sub_ds(logger=self.logger, vol_path=self.DATASET_PATH + '/validate/',
                                                         label_path=self.DATASET_PATH + '/validate_label/',
                                                         patch_size=self.patch_size,
                                                         samples_per_epoch=self.samples_per_epoch,
-                                                        stride_length=self.stride_length,
-                                                        stride_width=self.stride_width,
-                                                        stride_depth=self.stride_depth,
                                                         num_worker=self.num_worker,
-                                                        is_train=True)
+                                                        )
             self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
                                                                shuffle=False, num_workers=0)
 
     @staticmethod
-    def create_tio_sub_ds(logger, vol_path, label_path, patch_size, samples_per_epoch, stride_length, stride_width,
-                          stride_depth, num_worker,
-                          is_train=True, get_subjects_only=False):
+    def create_tio_sub_ds(logger, vol_path, label_path, num_worker=0, patch_size=None, samples_per_epoch=None,
+                          get_subjects_only=False):
 
         # trainDS = SRDataset(logger=logger, patch_size=64,
         #                     dir_path=vol_path,
@@ -117,6 +112,7 @@ class Pipeline:
         #                     return_coords=True
         #                     )
         # return trainDS
+        logger("creating patch..")
         vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
         labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
         subjects = []
@@ -124,7 +120,7 @@ class Pipeline:
             v = vols[i]
             filename = os.path.basename(v).split('.')[0]
             l = [s for s in labels if filename in s][0]
-            # to fix spacing issue between img(0.30) and label(1.0). Dont use resample as it messes up img and label
+            # to fix spacing issue between img(0.30) and label(1.0). Don't use resample as it messes up img and label
             # patch
             t1 = tio.ScalarImage(v)
             t1 = t1.data[:, :, :, :]
@@ -139,7 +135,7 @@ class Pipeline:
                 aug_label=t2,
                 subjectname=filename,
             )
-            transforms = tio.RandomFlip(axes=('LR',), flip_probability=1,exclude=["img","label"])
+            transforms = tio.RandomFlip(axes=('LR',), flip_probability=1, exclude=["img", "label"])
             transformed_subject = transforms(subject)
             subjects.append(transformed_subject)
 
@@ -182,13 +178,13 @@ class Pipeline:
         self.logger.info(f"Loading checkpoint from {str(checkpoint_path)}")
         if self.with_apex:
             self.UNet1, self.optimizer1, self.scaler = load_model_with_amp(self.UNet1,
-                                                                                      self.optimizer1,
-                                                                                      checkpoint_path,
-                                                                                      batch_index="best" if load_best else "last")
+                                                                           self.optimizer1,
+                                                                           checkpoint_path,
+                                                                           batch_index="best" if load_best else "last")
         else:
             self.UNet1, self.optimizer1 = load_model(self.UNet1, self.optimizer1,
-                                                                checkpoint_path,
-                                                                batch_index="best" if load_best else "last")
+                                                     checkpoint_path,
+                                                     batch_index="best" if load_best else "last")
 
     def train(self):
         self.logger.debug("Training...")
@@ -441,8 +437,9 @@ class Pipeline:
             test_folder_path = self.DATASET_PATH + '/test/'
             test_label_path = self.DATASET_PATH + '/test_label/'
 
-            test_subjects = Pipeline.create_TIOSubDS(vol_path=test_folder_path, label_path=test_label_path,
-                                                 get_subjects_only=True)
+            test_subjects = Pipeline.create_tio_sub_ds(logger=test_logger, vol_path=test_folder_path,
+                                                       label_path=test_label_path,
+                                                       get_subjects_only=True)
 
         overlap = np.subtract(self.patch_size, (self.stride_length, self.stride_width, self.stride_depth))
 
