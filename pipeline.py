@@ -244,7 +244,8 @@ class Pipeline:
                     # calculate Ft Loss
                     ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
-                    mean_loss = ((1 - dice_score) * ft_loss).mean()
+                    mean_loss = ft_loss.mean()
+                    # mean_loss = ((1 - dice_score) * ft_loss).mean()
                     mean_dice_score = dice_score.mean()
 
                     model_output_aug = self.UNet1(aug_batch)
@@ -272,7 +273,8 @@ class Pipeline:
                     # calculate Ft Loss
                     ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
 
-                    mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
+                    mean_loss_aug =  ft_loss_aug.mean()
+                    # mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
                     mean_dice_score_aug = dice_score_aug.mean()
 
                     total_mean_loss = mean_loss_aug + mean_loss
@@ -386,7 +388,8 @@ class Pipeline:
                 # calculate Ft Loss
                 ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
 
-                mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
+                mean_loss_aug = ft_loss_aug.mean()
+                # mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
                 mean_dice_score_aug = dice_score_aug.mean()
 
                 total_mean_loss = mean_loss_aug + mean_loss
