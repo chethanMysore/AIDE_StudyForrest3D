@@ -484,14 +484,14 @@ class Pipeline:
                     aggregator.add_batch(output, locations)
 
                 predicted = aggregator.get_output_tensor().squeeze().numpy()
-
-                try:
-                    thresh = threshold_otsu(predicted)
-                    result = predicted > thresh
-                except Exception as error:
-                    test_logger.exception(error)
-                    result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
-                result = result.astype(np.float32)
+                result = predicted
+                # try:
+                #     thresh = threshold_otsu(predicted)
+                #     result = predicted > thresh
+                # except Exception as error:
+                #     test_logger.exception(error)
+                #     result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
+                # result = result.astype(np.float32)
 
                 if label is not None:
                     datum = {"Subject": subjectname}
