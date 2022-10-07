@@ -179,6 +179,7 @@ class Pipeline:
         if checkpoint_path is None:
             checkpoint_path = self.CHECKPOINT_PATH
 
+        self.logger.info(f"Loading checkpoint from {str(checkpoint_path)}")
         if self.with_apex:
             self.UNet1, self.optimizer1, self.scaler = load_model_with_amp(self.UNet1,
                                                                                       self.optimizer1,

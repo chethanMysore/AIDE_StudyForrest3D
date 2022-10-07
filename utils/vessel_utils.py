@@ -71,6 +71,7 @@ def load_model(UNet1, optimizer1, checkpoint_path, batch_index='best', filename=
     """
     print('Loading model...')
     checkpoint = torch.load(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))
+    print(f"Model Loaded : {str(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))}")
     UNet1.load_state_dict(checkpoint['state_dict'][0])
     optimizer1.load_state_dict(checkpoint['optimizer'][0])
     UNet1.eval()
@@ -85,6 +86,7 @@ def load_model_with_amp(UNet1, optimizer1, checkpoint_path, batch_index='best', 
     print('Loading model...')
     UNet1.cuda()
     checkpoint = torch.load(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))
+    print(f"Model Loaded : {str(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))}")
     UNet1.load_state_dict(checkpoint['state_dict'][0])
     optimizer1.load_state_dict(checkpoint['optimizer'][0])
     scaler = GradScaler()
