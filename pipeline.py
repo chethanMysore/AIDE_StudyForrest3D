@@ -273,7 +273,7 @@ class Pipeline:
                     # calculate Ft Loss
                     ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
 
-                    mean_loss_aug =  ft_loss_aug.mean()
+                    mean_loss_aug = ft_loss_aug.mean()
                     # mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
                     mean_dice_score_aug = dice_score_aug.mean()
 
