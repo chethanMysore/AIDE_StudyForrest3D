@@ -41,7 +41,6 @@ class Pipeline:
         self.wandb = wandb
         self.learning_rate = cmd_args.learning_rate
         self.optimizer1 = torch.optim.Adam(UNet1.parameters(), lr=cmd_args.learning_rate)
-        self.optimizer2 = torch.optim.Adam(UNet2.parameters(), lr=cmd_args.learning_rate)
         self.num_epochs = cmd_args.num_epochs
         self.writer_training = writer_training
         self.writer_validating = writer_validating
@@ -181,13 +180,13 @@ class Pipeline:
             checkpoint_path = self.CHECKPOINT_PATH
 
         if self.with_apex:
-            self.UNet1, self.UNet2, self.optimizer, self.scaler = load_model_with_amp(self.UNet1, self.UNet2,
-                                                                                      self.optimizer1, self.optimizer2,
+            self.UNet1, self.optimizer1, self.scaler = load_model_with_amp(self.UNet1,
+                                                                                      self.optimizer1,
                                                                                       checkpoint_path,
                                                                                       batch_index="best" if load_best else "last")
         else:
-            self.UNet1, self.UNet2, self.optimizer = load_model(self.UNet1, self.UNet2, self.optimizer1,
-                                                                self.optimizer2, checkpoint_path,
+            self.UNet1, self.optimizer1 = load_model(self.UNet1, self.optimizer1,
+                                                                checkpoint_path,
                                                                 batch_index="best" if load_best else "last")
 
     def train(self):
@@ -235,8 +234,6 @@ class Pipeline:
 
                 # Clear gradients
                 self.optimizer1.zero_grad()
-                self.optimizer2.zero_grad()
-
                 # try:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
@@ -336,15 +333,6 @@ class Pipeline:
                 self.wandb.log({"Loss": total_loss,
                                 "DiceScore": total_dice_score})
 
-            # save_model(self.CHECKPOINT_PATH, {
-            #     'epoch_type': 'last',
-            #     'epoch': epoch,
-            #     # Let is always overwrite, we need just the last checkpoint and best checkpoint(saved after validate)
-            #     'state_dict': [self.UNet1.state_dict(), self.UNet2.state_dict()],
-            #     'optimizer': [self.optimizer1.state_dict(), self.optimizer2.state_dict()],
-            #     'amp': self.scaler.state_dict()
-            # })
-
             torch.cuda.empty_cache()  # to avoid memory errors
             self.validate(training_batch_index, epoch)
             torch.cuda.empty_cache()  # to avoid memory errors
@@ -373,7 +361,8 @@ class Pipeline:
             no_patches += 1
             local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
             local_labels = patches_batch['label'][tio.DATA].float().cuda()
-
+            aug_batch = Pipeline.normaliser(patches_batch['aug_img'][tio.DATA].float().cuda())
+            aug_labels = patches_batch['aug_label'][tio.DATA].float().cuda()
 
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -388,17 +377,31 @@ class Pipeline:
                 # calculate Ft Loss
                 ft_loss = self.focal_tversky_loss(model_output, local_labels)
 
-                mean_lose = ft_loss.mean()
+                mean_loss = ft_loss.mean()
                 mean_dice_score = dice_score.mean()
 
+                model_output_aug = self.UNet1(aug_batch)
+                model_output_aug = torch.sigmoid(model_output_aug)
+
+                # calculate dice score
+                dice_score_aug = self.dice_score(model_output_aug, aug_labels)
+                # calculate Ft Loss
+                ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
+
+                mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
+                mean_dice_score_aug = dice_score_aug.mean()
+
+                total_mean_loss = mean_loss_aug + mean_loss
+                total_mean_dice_score = (mean_dice_score_aug + mean_dice_score) / 2
                 # Log validation losses
 
-                self.logger.info("Batch_Index:" + str(batch_index) + " Validation..." +
-                                 "\n loss1: " + str(mean_lose) + " dice_score: " +
-                                 str(mean_dice_score))
+                self.logger.info(f" Batch Index: {str(batch_index)} Validating.. "
+                                 f"\n val_mean_loss {str(mean_loss)} val_mean_loss_aug {str(mean_loss_aug)} "
+                                 f"\n val_mean_dice_score {str(mean_dice_score)} val_mean_dice_score_aug {str(mean_dice_score_aug)} "
+                                 f"\n val_total_mean_loss {str(total_mean_loss)} val_total_dice_score {str(total_mean_dice_score)}")
 
-                total_loss += mean_lose.detach().cpu()
-                total_dice_score += mean_dice_score.detach().cpu()
+                total_loss += total_mean_loss.detach().cpu()
+                total_dice_score += total_mean_dice_score.detach().cpu()
 
         # Average the losses
         total_loss = total_loss / no_patches
@@ -421,17 +424,16 @@ class Pipeline:
         if self.LOWEST_LOSS > (1 - total_dice_score):  # Save best metric evaluation weights
             self.LOWEST_LOSS = (1 - total_dice_score)
             self.logger.info(
-                'Best metric... @ epoch:' + str(training_index) + ' Current Lowest loss:' + str(self.LOWEST_LOSS))
+                'Best metric... @ epoch:' + str(epoch) + ' Current Lowest loss:' + str(self.LOWEST_LOSS))
 
             save_model(self.CHECKPOINT_PATH, {
                 'epoch_type': 'best',
                 'epoch': epoch,
-                'state_dict': [self.UNet1.state_dict(), self.UNet2.state_dict()],
-                'optimizer': [self.optimizer1.state_dict(), self.optimizer2.state_dict()],
+                'state_dict': [self.UNet1.state_dict()],
+                'optimizer': [self.optimizer1.state_dict()],
                 'amp': self.scaler.state_dict()})
 
     def test(self, test_logger, test_subjects=None, save_results=True):
-        #test_logger.debug('Testing... TODO')
         test_logger.debug('Testing...')
 
         if test_subjects is None:
