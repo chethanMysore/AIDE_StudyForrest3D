@@ -491,7 +491,7 @@ class Pipeline:
                 # except Exception as error:
                 #     test_logger.exception(error)
                 #     result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
-                # result = result.astype(np.float32)
+                result = result.astype(np.float32)
 
                 if label is not None:
                     datum = {"Subject": subjectname}
