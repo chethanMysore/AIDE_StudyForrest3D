@@ -112,7 +112,7 @@ class Pipeline:
         #                     return_coords=True
         #                     )
         # return trainDS
-        logger("creating patch..")
+        logger.info("creating patch..")
         vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
         labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
         subjects = []
