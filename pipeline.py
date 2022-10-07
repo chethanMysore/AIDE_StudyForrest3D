@@ -445,7 +445,7 @@ class Pipeline:
         overlap = np.subtract(self.patch_size, (self.stride_length, self.stride_width, self.stride_depth))
 
         df = pd.DataFrame(columns=["Subject", "Dice", "IoU"])
-        result_root = os.path.join(self.output_path, self.model_name, "results")
+        result_root = os.path.join(self.OUTPUT_PATH, self.model_name, "results")
         os.makedirs(result_root, exist_ok=True)
 
         self.UNet1.eval()
