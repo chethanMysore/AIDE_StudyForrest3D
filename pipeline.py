@@ -441,7 +441,7 @@ class Pipeline:
             test_folder_path = self.DATASET_PATH + '/test/'
             test_label_path = self.DATASET_PATH + '/test_label/'
 
-            test_subjects = self.create_TIOSubDS(vol_path=test_folder_path, label_path=test_label_path,
+            test_subjects = Pipeline.create_TIOSubDS(vol_path=test_folder_path, label_path=test_label_path,
                                                  get_subjects_only=True)
 
         overlap = np.subtract(self.patch_size, (self.stride_length, self.stride_width, self.stride_depth))
@@ -472,7 +472,7 @@ class Pipeline:
                                                            num_workers=self.num_worker)
 
                 for index, patches_batch in enumerate(tqdm(patch_loader)):
-                    local_batch = self.normaliser(patches_batch['img'][tio.DATA].float().cuda())
+                    local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
                     locations = patches_batch[tio.LOCATION]
 
                     with autocast(enabled=self.with_apex):
