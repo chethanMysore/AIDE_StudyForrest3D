@@ -71,6 +71,7 @@ class Pipeline:
         self.focal_tversky_loss = FocalTverskyLoss()
         self.dice_score = DiceScore()
         self.consistency_loss = ConsistencyLoss()
+        self.loss
 
         # Following metrics can be used to evaluate
         # self.dice = Dice()
@@ -98,12 +99,17 @@ class Pipeline:
                                                         patch_size=self.patch_size,
                                                         samples_per_epoch=self.samples_per_epoch,
                                                         num_worker=self.num_worker,
+                                                        stride_depth=self.stride_depth,
+                                                        stride_length =self.stride_length,
+                                                        stride_width=self.stride_width,
+                                                        is_train=False
                                                         )
             self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
                                                                shuffle=False, num_workers=0)
 
     @staticmethod
-    def create_tio_sub_ds(logger, vol_path, label_path, num_worker=0, patch_size=None, samples_per_epoch=None,
+    def create_tio_sub_ds(logger, vol_path, label_path, stride_width=None,stride_length=None,stride_depth=None,
+                          num_worker=0, patch_size=None, samples_per_epoch=None,
                           get_subjects_only=False,is_train=True):
 
         # trainDS = SRDataset(logger=logger, patch_size=64,
@@ -136,24 +142,40 @@ class Pipeline:
                 subjectname=filename,
             )
             if is_train:
-                transforms = tio.RandomFlip(axes=('LR',), flip_probability=1, exclude=["img", "label"])
+                transforms = tio.RandomFlip(axes=('LR',), flip_probability=0.75, exclude=["img", "label"])
                 subject = transforms(subject)
+
             subjects.append(subject)
 
         if get_subjects_only:
             return subjects
 
-        subjects_dataset = tio.SubjectsDataset(subjects)
-        sampler = tio.data.UniformSampler(patch_size)
-        patches_queue = tio.Queue(
-            subjects_dataset,
-            max_length=(samples_per_epoch // len(subjects)) * 4,
-            samples_per_volume=(samples_per_epoch // len(subjects)),
-            sampler=sampler,
-            num_workers=0,
-            start_background=True
-        )
-        return patches_queue
+        if is_train:
+            logger.info("creating training patch..")
+            subjects_dataset = tio.SubjectsDataset(subjects)
+            sampler = tio.data.UniformSampler(patch_size)
+            patches_queue = tio.Queue(
+                subjects_dataset,
+                max_length=(samples_per_epoch // len(subjects)) * 4,
+                samples_per_volume=(samples_per_epoch // len(subjects)),
+                sampler=sampler,
+                num_workers=num_worker,
+                start_background=True
+            )
+            return patches_queue
+        else:
+            logger.info("creating validation patch..")
+            overlap = np.subtract(patch_size, (stride_length, stride_width, stride_depth))
+            grid_samplers = []
+            for i in range(len(subjects)):
+                grid_sampler = tio.inference.GridSampler(
+                    subjects[i],
+                    patch_size,
+                    overlap,
+                )
+                grid_samplers.append(grid_sampler)
+            return torch.utils.data.ConcatDataset(grid_samplers)
+
 
     @staticmethod
     def normaliser(batch):

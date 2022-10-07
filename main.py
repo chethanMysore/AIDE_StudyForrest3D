@@ -42,10 +42,10 @@ if __name__ == '__main__':
                         help="Folder path to store output "
                              "Example: /home/output/")
     parser.add_argument('-train',
-                        default=False,
+                        default=True,
                         help="To train the model")
     parser.add_argument('-test',
-                        default=True,
+                        default=False,
                         help="To test the model")
     parser.add_argument('-predict',
                         default=False,
@@ -109,7 +109,7 @@ if __name__ == '__main__':
                         help="Number of samples per epoch")
     parser.add_argument("-num_worker",
                         type=int,
-                        default=8,
+                        default=0,
                         help="Number of worker threads")
     parser.add_argument("-segcor_weight1",
                         type=float,
