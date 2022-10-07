@@ -495,9 +495,9 @@ class Pipeline:
 
                 if label is not None:
                     datum = {"Subject": subjectname}
-                    dice3D = dice(result, label)
-                    iou3D = iou(result, label)
-                    datum = pd.DataFrame.from_dict({**datum, "Dice": [dice3D], "IoU": [iou3D]})
+                    # dice3D = dice(result, label)
+                    # iou3D = iou(result, label)
+                    datum = pd.DataFrame.from_dict({**datum, "Dice": [0.0], "IoU": [0.0]})
                     df = pd.concat([df, datum], ignore_index=True)
 
                 if save_results:
@@ -516,8 +516,8 @@ class Pipeline:
                             os.path.join(result_root, subjectname + "_colourMIP.tif"))
 
                 test_logger.info("Testing " + subjectname + "..." +
-                                 "\n Dice:" + str(dice3D) +
-                                 "\n JacardIndex:" + str(iou3D))
+                                 "\n Dice:" + str(0.0) +
+                                 "\n JacardIndex:" + str(0.0))
 
             df.to_excel(os.path.join(result_root, "Results_Main.xlsx"))
 
