@@ -104,7 +104,7 @@ class Pipeline:
 
     @staticmethod
     def create_tio_sub_ds(logger, vol_path, label_path, num_worker=0, patch_size=None, samples_per_epoch=None,
-                          get_subjects_only=False):
+                          get_subjects_only=False,is_train=True):
 
         # trainDS = SRDataset(logger=logger, patch_size=64,
         #                     dir_path=vol_path,
@@ -135,9 +135,10 @@ class Pipeline:
                 aug_label=t2,
                 subjectname=filename,
             )
-            transforms = tio.RandomFlip(axes=('LR',), flip_probability=1, exclude=["img", "label"])
-            transformed_subject = transforms(subject)
-            subjects.append(transformed_subject)
+            if is_train:
+                transforms = tio.RandomFlip(axes=('LR',), flip_probability=1, exclude=["img", "label"])
+                subject = transforms(subject)
+            subjects.append(subject)
 
         if get_subjects_only:
             return subjects
