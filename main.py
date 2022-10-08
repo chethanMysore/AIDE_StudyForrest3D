@@ -42,7 +42,7 @@ if __name__ == '__main__':
                         help="Folder path to store output "
                              "Example: /home/output/")
     parser.add_argument('-train',
-                        default=False,
+                        default=True,
                         help="To train the model")
     parser.add_argument('-test',
                         default=True,
