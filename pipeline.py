@@ -93,7 +93,7 @@ class Pipeline:
                                                       num_worker=self.num_worker)
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
-            validation_set, self.grid_sampler = Pipeline.create_tio_sub_ds(logger=self.logger,
+            validation_set = Pipeline.create_tio_sub_ds(logger=self.logger,
                                                                            vol_path=self.DATASET_PATH + '/validate/',
                                                                            label_path=self.DATASET_PATH + '/validate_label/',
                                                                            patch_size=self.patch_size,
@@ -174,7 +174,7 @@ class Pipeline:
                     overlap,
                 )
                 grid_samplers.append(grid_sampler)
-            return torch.utils.data.ConcatDataset(grid_samplers), grid_samplers
+            return torch.utils.data.ConcatDataset(grid_samplers)
 
     @staticmethod
     def normaliser(batch):
@@ -376,7 +376,6 @@ class Pipeline:
         total_loss = 0
         total_dice_score = 0
         no_patches = 0
-        aggregator = tio.inference.GridAggregator(self.grid_sampler, overlap_mode="average")
         for batch_index, patches_batch in enumerate(tqdm(self.validate_loader)):
             self.logger.info("loading" + str(batch_index))
             no_patches += 1
@@ -425,18 +424,6 @@ class Pipeline:
 
                 total_loss += total_mean_loss.detach().cpu()
                 total_dice_score += total_mean_dice_score.detach().cpu()
-                if epoch == 50:
-                    output = model_output
-                    locations = patches_batch[tio.LOCATION]
-                    aggregator.add_batch(output.detach.cpu(), locations)
-
-        if epoch == 50:
-            result_root = os.path.join(self.OUTPUT_PATH, self.model_name, "results")
-            os.makedirs(result_root, exist_ok=True)
-            predicted = aggregator.get_output_tensor().squeeze().numpy()
-            result = predicted
-            result = result.astype(np.float32)
-            save_nifti(result, os.path.join(result_root, "validation_result" + ".nii.gz"))
 
         # Average the losses
         total_loss = total_loss / no_patches
