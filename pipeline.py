@@ -517,20 +517,19 @@ class Pipeline:
                     aggregator.add_batch(output, locations)
 
                 predicted = aggregator.get_output_tensor().squeeze().numpy()
-                result = predicted
-                # try:
-                #     thresh = threshold_otsu(predicted)
-                #     result = predicted > thresh
-                # except Exception as error:
-                #     test_logger.exception(error)
-                #     result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
+                try:
+                    thresh = threshold_otsu(predicted)
+                    result = predicted > thresh
+                except Exception as error:
+                    test_logger.exception(error)
+                    result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
                 result = result.astype(np.float32)
 
                 if label is not None:
                     datum = {"Subject": subjectname}
-                    # dice3D = dice(result, label)
-                    # iou3D = iou(result, label)
-                    datum = pd.DataFrame.from_dict({**datum, "Dice": [0.0], "IoU": [0.0]})
+                    dice3D = dice(result, label)
+                    iou3D = iou(result, label)
+                    datum = pd.DataFrame.from_dict({**datum, "Dice": [dice3D], "IoU": [iou3D]})
                     df = pd.concat([df, datum], ignore_index=True)
 
                 if save_results:
@@ -549,8 +548,8 @@ class Pipeline:
                             os.path.join(result_root, subjectname + "_colourMIP.tif"))
 
                 test_logger.info("Testing " + subjectname + "..." +
-                                 "\n Dice:" + str(0.0) +
-                                 "\n JacardIndex:" + str(0.0))
+                                 "\n Dice:" + str(dice3D) +
+                                 "\n JacardIndex:" + str(iou3D))
 
             df.to_excel(os.path.join(result_root, "Results_Main.xlsx"))
 
