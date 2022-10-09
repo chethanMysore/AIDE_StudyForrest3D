@@ -122,6 +122,9 @@ if __name__ == '__main__':
     parser.add_argument("-wandb",
                         default=True,
                         help="Set this to true to include wandb logging")
+    parser.add_argument("-version",
+                        default="NA",
+                        help="version number")
 
     args = parser.parse_args()
 
@@ -142,7 +145,10 @@ if __name__ == '__main__':
     wandb = None
     if str(args.wandb).lower() == "true":
         import wandb
-        wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name)
+        if args.version is "NA":
+            wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name)
+        else:
+            wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name, name=args.version)
         wandb.config = {
             "learning_rate": args.learning_rate,
             "epochs": args.num_epochs,
