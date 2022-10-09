@@ -142,7 +142,12 @@ class Pipeline:
                 subjectname=filename,
             )
             if is_train:
-                transforms = tio.RandomFlip(axes=('LR',), flip_probability=0.75, exclude=["img", "label"])
+                transforms = tio.RandomFlip(axes=['LR', 'AP', 'IS'], flip_probability=0.75, exclude=["img", "label"])
+                # transforms_dict = {
+                #     tio.RandomAffine(): 0.75,
+                #     tio.RandomElasticDeformation(): 0.25,
+                # }  # Using 3 and 1 as probabilities would have the same effect
+                # transform = tio.OneOf(transforms_dict)
                 subject = transforms(subject)
 
             subjects.append(subject)
