@@ -14,7 +14,7 @@ from glob import glob
 import torchvision as tv
 import pandas as pd
 from skimage.filters import threshold_otsu
-
+import random
 from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyLoss, DiceScore)
 from utils.customutils import subjects_to_tensors, tensors_to_subjects
 from utils.datasets import SRDataset
@@ -94,30 +94,52 @@ class Pipeline:
             self.train_loader = torch.utils.data.DataLoader(training_set, batch_size=self.batch_size, shuffle=True,
                                                             num_workers=0)
             validation_set = Pipeline.create_tio_sub_ds(logger=self.logger,
-                                                                           vol_path=self.DATASET_PATH + '/validate/',
-                                                                           label_path=self.DATASET_PATH + '/validate_label/',
-                                                                           patch_size=self.patch_size,
-                                                                           samples_per_epoch=self.samples_per_epoch,
-                                                                           num_worker=self.num_worker,
-                                                                           stride_depth=self.stride_depth,
-                                                                           stride_length=self.stride_length,
-                                                                           stride_width=self.stride_width,
-                                                                           is_train=False
-                                                                           )
+                                                        vol_path=self.DATASET_PATH + '/validate/',
+                                                        label_path=self.DATASET_PATH + '/validate_label/',
+                                                        patch_size=self.patch_size,
+                                                        samples_per_epoch=self.samples_per_epoch,
+                                                        num_worker=self.num_worker,
+                                                        stride_depth=self.stride_depth,
+                                                        stride_length=self.stride_length,
+                                                        stride_width=self.stride_width,
+                                                        is_train=False
+                                                        )
             self.validate_loader = torch.utils.data.DataLoader(validation_set, batch_size=self.batch_size,
                                                                shuffle=False, num_workers=0)
+
+    @staticmethod
+    def get_transformations(img):
+        def get_max_displacement(img,control_points):
+            image = img.as_sitk()
+            bounds = np.array(image.GetSize()) * np.array(image.GetSpacing())
+            num_control_points = np.array(control_points)
+            grid_spacing = bounds / (num_control_points - 2)
+            potential_folding = grid_spacing / 2
+
+            min_displacement = [30., 40., 10.18]  # min displacement when num_of_control_points = 10
+            displacement_points = ()
+
+            for min_displacement, max_displacement in zip(min_displacement, potential_folding):
+                pt = round(random.uniform(min_displacement, max_displacement), 2)
+                displacement_points += (pt,)
+            return displacement_points
+
+        num_of_control_points = tuple(random.randint(5, 10) for _ in range(3))
+
+        return tio.Compose([
+            tio.RandomFlip(axes=[*set(random.choice(['LR', 'AP', 'IS'], k=2))],
+                           flip_probability=0.75,
+                           exclude=["img", "label"]),
+            tio.RandomElasticDeformation(num_control_points=num_of_control_points, locked_borders=2,
+                                         max_displacement=get_max_displacement(img,num_of_control_points),
+                                         exclude=["img", "label"])
+        ])
 
     @staticmethod
     def create_tio_sub_ds(logger, vol_path, label_path, stride_width=None, stride_length=None, stride_depth=None,
                           num_worker=0, patch_size=None, samples_per_epoch=None,
                           get_subjects_only=False, is_train=True):
 
-        # trainDS = SRDataset(logger=logger, patch_size=64,
-        #                     dir_path=vol_path,
-        #                     label_dir_path=label_path, pre_load=True,
-        #                     return_coords=True
-        #                     )
-        # return trainDS
         logger.info("creating patch..")
         vols = glob(vol_path + "*.nii") + glob(vol_path + "*.nii.gz")
         labels = glob(label_path + "*.nii") + glob(label_path + "*.nii.gz")
@@ -128,26 +150,24 @@ class Pipeline:
             l = [s for s in labels if filename in s][0]
             # to fix spacing issue between img(0.30) and label(1.0). Don't use resample as it messes up img and label
             # patch
+
             t1 = tio.ScalarImage(v)
             t1 = t1.data[:, :, :, :]
             t1 = tio.ScalarImage(tensor=t1)
             t2 = tio.LabelMap(l)
             t2 = t2.data[:, :, :, :]
             t2 = tio.LabelMap(tensor=t2)
+
             subject = tio.Subject(
                 img=t1,
                 label=t2,
                 aug_img=t1,
                 aug_label=t2,
-                subjectname=filename,
+                subjectname=filename
             )
+
             if is_train:
-                transforms = tio.RandomFlip(axes=['LR', 'AP', 'IS'], flip_probability=0.75, exclude=["img", "label"])
-                # transforms_dict = {
-                #     tio.RandomAffine(): 0.75,
-                #     tio.RandomElasticDeformation(): 0.25,
-                # }  # Using 3 and 1 as probabilities would have the same effect
-                # transform = tio.OneOf(transforms_dict)
+                transforms = Pipeline.get_transformations(t1)
                 subject = transforms(subject)
 
             subjects.append(subject)
@@ -188,15 +208,15 @@ class Pipeline:
                 batch[i] = batch[i] / batch[i].max()
         return batch
 
-    @staticmethod
-    def apply_transformation(transforms, ip):
-        list_tensor = []
-        for idx, batch in enumerate(ip):
-            transformed_batch = batch
-            for transform in transforms:
-                transformed_batch = transform(batch)
-            list_tensor.append(transformed_batch)
-        return torch.stack(list_tensor, dim=0)
+    # @staticmethod
+    # def apply_transformation(transforms, ip):
+    #     list_tensor = []
+    #     for idx, batch in enumerate(ip):
+    #         transformed_batch = batch
+    #         for transform in transforms:
+    #             transformed_batch = transform(batch)
+    #         list_tensor.append(transformed_batch)
+    #     return torch.stack(list_tensor, dim=0)
 
     def load(self, checkpoint_path=None, load_best=True):
         if checkpoint_path is None:
