@@ -127,7 +127,7 @@ class Pipeline:
         num_of_control_points = tuple(random.randint(5, 10) for _ in range(3))
 
         return tio.Compose([
-            tio.RandomFlip(axes=[*set(random.choice(['LR', 'AP', 'IS'], k=2))],
+            tio.RandomFlip(axes=[*set(random.choices(['LR', 'AP', 'IS'], k=2))],
                            flip_probability=0.75,
                            exclude=["img", "label"]),
             tio.RandomElasticDeformation(num_control_points=num_of_control_points, locked_borders=2,
