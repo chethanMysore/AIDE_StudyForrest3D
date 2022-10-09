@@ -3,5 +3,5 @@ v3 ---> revert loss function consider only ft_loss (with flip prob 1) --> snowy-
 v4 ---> revert loss function consider only ft_loss and new sampler for validation data loader (with flip prob 0.75) -->fallen-haze-82
 v5 ---> v2 (with flip prob 0.75) and patch size reduced to 16 --> stoic-vortex-86
 v6 ---> v2 (with flip prob 0.75) and patch size reduced to 32 --> mild-wind-89
-v7 ---> new loss function using dice score add more transformation functions (with flip prob 0.75)
+v7 ---> new loss function using dice score add more transformation functions (with flip prob 0.75) -->  wise-darkness-91
 v8 ---> v2 (with flip prob 0.75) + add more transformation functions (with flip prob 0.75)
