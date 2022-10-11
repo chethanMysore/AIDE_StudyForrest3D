@@ -262,10 +262,10 @@ class Pipeline:
                 aug_batch = torch.stack(transformed_imgs,dim=0)
                 aug_labels = torch.stack(transformed_labels,dim=0)
 
-                aug_batch.cuda()
-                aug_labels.cuda()
-                local_batch.cuda()
-                local_labels.cuda()
+                aug_batch = aug_batch.cuda()
+                aug_labels = aug_labels.cuda()
+                local_batch = local_batch.cuda()
+                local_labels = local_labels.cuda()
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -276,7 +276,7 @@ class Pipeline:
                 # try:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
-                    model_output = self.UNet1(local_batch).cuda()
+                    model_output = self.UNet1(local_batch)
                     model_output = torch.sigmoid(model_output)
                     # model_output_aug = self.UNet2(local_batch_aug)
                     print("================")
@@ -399,10 +399,10 @@ class Pipeline:
             aug_batch = torch.stack(transformed_imgs, dim=0)
             aug_labels = torch.stack(transformed_labels, dim=0)
 
-            aug_batch.cuda()
-            aug_labels.cuda()
-            local_batch.cuda()
-            local_labels.cuda()
+            aug_batch = aug_batch.cuda()
+            aug_labels = aug_labels.cuda()
+            local_batch = local_batch.cuda()
+            local_labels = local_labels.cuda()
 
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
@@ -410,7 +410,7 @@ class Pipeline:
             # try:
             with autocast(enabled=self.with_apex):
                 # Get the classification response map(normalized) and respective class assignments after argmax
-                model_output = self.UNet1(local_batch).cuda()
+                model_output = self.UNet1(local_batch)
                 model_output = torch.sigmoid(model_output)
                 # calculate dice score
                 dice_score = self.dice_score(model_output, local_labels)

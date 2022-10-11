@@ -145,7 +145,7 @@ if __name__ == '__main__':
     wandb = None
     if str(args.wandb).lower() == "true":
         import wandb
-        if args.version is "NA":
+        if args.version == "NA":
             wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name)
         else:
             wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name, name=args.version)
