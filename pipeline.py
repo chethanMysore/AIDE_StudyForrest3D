@@ -8,6 +8,9 @@ import torch.utils.data
 import torchio as tio
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
+from torchvision import transforms as T
+from torchvision.transforms import functional as F
+import random
 import os
 import numpy as np
 from glob import glob
@@ -19,6 +22,7 @@ from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyL
 from utils.customutils import subjects_to_tensors, tensors_to_subjects
 from utils.datasets import SRDataset
 from utils.results_analyser import *
+from utils.transformations_utils import RandomAffineTransformation, RandomRotateTransformation
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
 __author__ = "Chethan Radhakrishna and Soumick Chatterjee"
@@ -161,14 +165,12 @@ class Pipeline:
             subject = tio.Subject(
                 img=t1,
                 label=t2,
-                aug_img=t1,
-                aug_label=t2,
                 subjectname=filename
             )
 
-            if is_train:
-                transforms = Pipeline.get_transformations(t1)
-                subject = transforms(subject)
+            # if is_train:
+            #     transforms = Pipeline.get_transformations(t1)
+            #     subject = transforms(subject)
 
             subjects.append(subject)
 
@@ -235,6 +237,8 @@ class Pipeline:
 
     def train(self):
         self.logger.debug("Training...")
+        random_rotate = RandomRotateTransformation()
+        random_affine = RandomAffineTransformation()
 
         training_batch_index = 0
         for epoch in range(self.num_epochs):
@@ -245,39 +249,30 @@ class Pipeline:
             batch_index = 0
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
-                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-                local_labels = patches_batch['label'][tio.DATA].float().cuda()
-                aug_batch = Pipeline.normaliser(patches_batch['aug_img'][tio.DATA].float().cuda())
-                aug_labels = patches_batch['aug_label'][tio.DATA].float().cuda()
+                local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
+                local_labels = patches_batch['label'][tio.DATA].float()
 
-                ###############################################################################
-                # # Transform images
-                # subjects = []
-                # aug_subjects = []
-                # inverse_transform_functions = []
-                # for img, label in zip(local_batch, local_labels):
-                #     img = tio.ScalarImage(tensor=img)
-                #     label = tio.LabelMap(tensor=label)
-                #     subject = tio.Subject(img=img, label=label)
-                #     subjects.append(subject)
-                #     transform = tio.RandomFlip(axes=('LR',), flip_probability=1)
-                #     transformed_subjects = transform(subject)
-                #     aug_subjects.append(transformed_subjects)
-                #     inverse_transform_functions.append(transformed_subjects.get_inverse_transform())
-                #
-                # # convert subjects to tensors
-                # local_batch, local_labels = subjects_to_tensors(subjects)
-                # aug_batch, aug_labels = subjects_to_tensors(aug_subjects)
-                # local_batch = local_batch.float()
-                # local_labels = local_labels.float()
-                # aug_batch = aug_batch.float()
-                ########################################################################################
+                transformed_labels = []
+                transformed_imgs = []
+                for img,label in zip(local_batch,local_labels):
+                    transform = T.Compose([random_rotate.get_transform(),random_affine.get_transform()])
+                    transformed_imgs.append(transform(img))
+                    transformed_labels.append(transform(label))
+
+                aug_batch = torch.stack(transformed_imgs,dim=0)
+                aug_labels = torch.stack(transformed_labels,dim=0)
+
+                aug_batch.cuda()
+                aug_labels.cuda()
+                local_batch.cuda()
+                local_labels.cuda()
 
                 # Transfer to GPU
                 self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))
 
                 # Clear gradients
                 self.optimizer1.zero_grad()
+
                 # try:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
@@ -296,23 +291,6 @@ class Pipeline:
 
                     model_output_aug = self.UNet1(aug_batch)
                     model_output_aug = torch.sigmoid(model_output_aug)
-                    ########################################################################################
-                    # # apply inverse transform ; tensors -> subjects -> inversefunction(subjects) -> tensors
-                    #
-                    # # convert tensors to subjects
-                    # model_output_aug_subjects = tensors_to_subjects(model_output_aug.cpu())
-                    #
-                    # assert len(model_output_aug_subjects) == len(inverse_transform_functions), "pred and inversefunction dont match"
-                    #
-                    # #apply inverse function to subjects
-                    # pred_subjects = []
-                    # for pred_subject, inverse_function in zip(model_output_aug_subjects,inverse_transform_functions):
-                    #     pred_subjects.append(inverse_function(pred_subject))
-                    #
-                    # # convert subjects to tensors
-                    # model_output_aug = subjects_to_tensors(pred_subject)
-                    # model_output_aug = model_output_aug
-                    ##########################################################################################
 
                     # calculate dice score
                     dice_score_aug = self.dice_score(model_output_aug, aug_labels)
@@ -397,17 +375,31 @@ class Pipeline:
         writer = self.writer_validating
         self.UNet1.eval()
         self.UNet2.eval()
-
+        random_rotate = RandomRotateTransformation()
+        random_affine = RandomAffineTransformation()
         total_loss = 0
         total_dice_score = 0
         no_patches = 0
         for batch_index, patches_batch in enumerate(tqdm(self.validate_loader)):
             self.logger.info("loading" + str(batch_index))
             no_patches += 1
-            local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-            local_labels = patches_batch['label'][tio.DATA].float().cuda()
-            aug_batch = Pipeline.normaliser(patches_batch['aug_img'][tio.DATA].float().cuda())
-            aug_labels = patches_batch['aug_label'][tio.DATA].float().cuda()
+            local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
+            local_labels = patches_batch['label'][tio.DATA].float()
+
+            transformed_labels = []
+            transformed_imgs = []
+            for img, label in zip(local_batch, local_labels):
+                transform = T.Compose([random_rotate.get_transform(), random_affine.get_transform()])
+                transformed_imgs.append(transform(img))
+                transformed_labels.append(transform(label))
+
+            aug_batch = torch.stack(transformed_imgs, dim=0)
+            aug_labels = torch.stack(transformed_labels, dim=0)
+
+            aug_batch.cuda()
+            aug_labels.cuda()
+            local_batch.cuda()
+            local_labels.cuda()
 
             # Transfer to GPU
             self.logger.debug('Epoch: {} Batch Index: {}'.format(epoch, batch_index))

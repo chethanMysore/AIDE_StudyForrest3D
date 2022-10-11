@@ -5,3 +5,4 @@ v5 ---> v2 (with flip prob 0.75) + patch size reduced to 16 --> stoic-vortex-86
 v6 ---> v2 (with flip prob 0.75) + patch size reduced to 32 --> mild-wind-89
 v7 ---> new loss function using dice score and add more transformation functions -->  wise-darkness-91
 v8 ---> v4 (with flip prob 0.75) + add more transformation functions (with flip prob 0.75) --> deep-resonance-92
+v9 ---> Transformation on Patches instead on whole images
