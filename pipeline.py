@@ -407,9 +407,13 @@ class Pipeline:
             # try:
             with autocast(enabled=self.with_apex):
                 # Get the classification response map(normalized) and respective class assignments after argmax
-                model_output = self.UNet1(local_batch)
+                model_output = self.UNet1(local_batch).cuda()
                 model_output = torch.sigmoid(model_output)
                 # calculate dice score
+                print("================")
+                print(model_output.is_cuda)
+                print(local_labels.is_cuda)
+                print("================")
                 dice_score = self.dice_score(model_output, local_labels)
                 # calculate Ft Loss
                 ft_loss = self.focal_tversky_loss(model_output, local_labels)
