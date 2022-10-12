@@ -45,6 +45,7 @@ class Pipeline:
         self.wandb = wandb
         self.learning_rate = cmd_args.learning_rate
         self.optimizer1 = torch.optim.Adam(UNet1.parameters(), lr=cmd_args.learning_rate)
+        self.optimizer2 = torch.optim.Adam(UNet2.parameters(), lr=cmd_args.learning_rate)
         self.num_epochs = cmd_args.num_epochs
         self.writer_training = writer_training
         self.writer_validating = writer_validating
@@ -113,7 +114,7 @@ class Pipeline:
 
     @staticmethod
     def get_transformations(img):
-        def get_max_displacement(img,control_points):
+        def get_max_displacement(img, control_points):
             image = img.as_sitk()
             bounds = np.array(image.GetSize()) * np.array(image.GetSpacing())
             num_control_points = np.array(control_points)
@@ -135,7 +136,7 @@ class Pipeline:
                            flip_probability=0.75,
                            exclude=["img", "label"]),
             tio.RandomElasticDeformation(num_control_points=num_of_control_points, locked_borders=2,
-                                         max_displacement=get_max_displacement(img,num_of_control_points),
+                                         max_displacement=get_max_displacement(img, num_of_control_points),
                                          exclude=["img", "label"])
         ])
 
@@ -210,16 +211,6 @@ class Pipeline:
                 batch[i] = batch[i] / batch[i].max()
         return batch
 
-    # @staticmethod
-    # def apply_transformation(transforms, ip):
-    #     list_tensor = []
-    #     for idx, batch in enumerate(ip):
-    #         transformed_batch = batch
-    #         for transform in transforms:
-    #             transformed_batch = transform(batch)
-    #         list_tensor.append(transformed_batch)
-    #     return torch.stack(list_tensor, dim=0)
-
     def load(self, checkpoint_path=None, load_best=True):
         if checkpoint_path is None:
             checkpoint_path = self.CHECKPOINT_PATH
@@ -235,32 +226,49 @@ class Pipeline:
                                                      checkpoint_path,
                                                      batch_index="best" if load_best else "last")
 
+    def apply_reverse_transformation(self, tensor_list, transformation_instances):
+        transformed_imgs = []
+        for img, transformation in zip(tensor_list, transformation_instances):
+            transform = T.Compose([transformation.get_inverse_transform()])
+            transformed_imgs.append(transform(img))
+        return torch.stack(transformed_imgs, dim=0)
+
+    def apply_transformation(self, batch, label):
+        transformed_labels = []
+        transformed_imgs = []
+        transformation_instances = []
+        for img, label in zip(batch, label):
+            random_rotate = RandomRotateTransformation()
+            transform = T.Compose([random_rotate.get_transform()])
+            transformed_imgs.append(transform(img))
+            transformed_labels.append(transform(label))
+            transformation_instances.append(random_rotate)
+
+        aug_batch = torch.stack(transformed_imgs, dim=0)
+        aug_labels = torch.stack(transformed_labels, dim=0)
+
+        return aug_batch, aug_labels, transformation_instances
+
     def train(self):
         self.logger.debug("Training...")
-        random_rotate = RandomRotateTransformation()
-        random_affine = RandomAffineTransformation()
+        rate_schedule = np.ones(self.num_epoch)
 
         training_batch_index = 0
         for epoch in range(self.num_epochs):
             print("Train Epoch: " + str(epoch) + " of " + str(self.num_epochs))
             self.UNet1.train()  # make sure to assign mode:train, because in validation, mode is assigned as eval
-            total_loss = 0
-            total_dice_score = 0
+            self.UNet2.train()
+            total_loss_1 = 0
+            total_loss_2 = 0
+            total_dice_score_1 = 0
+            total_dice_score_2 = 0
             batch_index = 0
+            rate_schedule[epoch] = min((float(epoch) / 10.0) ** 2, 1.0)
 
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
                 local_labels = patches_batch['label'][tio.DATA].float()
-
-                transformed_labels = []
-                transformed_imgs = []
-                for img,label in zip(local_batch,local_labels):
-                    transform = T.Compose([random_rotate.get_transform(),random_affine.get_transform()])
-                    transformed_imgs.append(transform(img))
-                    transformed_labels.append(transform(label))
-
-                aug_batch = torch.stack(transformed_imgs,dim=0)
-                aug_labels = torch.stack(transformed_labels,dim=0)
+                aug_batch, aug_labels, transformation_instances = self.apply_transformation(local_batch, local_labels)
 
                 aug_batch = aug_batch.cuda()
                 aug_labels = aug_labels.cuda()
@@ -272,93 +280,138 @@ class Pipeline:
 
                 # Clear gradients
                 self.optimizer1.zero_grad()
+                self.optimizer2.zero_grad()
 
                 # try:
                 with autocast(enabled=self.with_apex):
                     # Get the classification response map(normalized) and respective class assignments after argmax
-                    model_output = self.UNet1(local_batch)
-                    model_output = torch.sigmoid(model_output)
-                    # model_output_aug = self.UNet2(local_batch_aug)
-                    print("================")
-                    print(model_output.is_cuda)
-                    print(local_labels.is_cuda)
-                    print("================")
-                    # calculate dice score
-                    dice_score = self.dice_score(model_output, local_labels)
+
+                    model_output_aug_1 = self.UNet1(aug_batch).detach()
+                    model_output_aug_1 = torch.sigmoid(model_output_aug_1)
+                    model_output_revaug_1 = self.apply_reverse_transformation(model_output_aug_1,
+                                                                              transformation_instances)
+
+                    model_output_aug_2 = self.UNet2(aug_batch).detach()
+                    model_output_aug_2 = torch.sigmoid(model_output_aug_2)
+                    model_output_revaug_2 = self.apply_reverse_transformation(model_output_aug_2,
+                                                                              transformation_instances)
+
+                    # todo sharpen
+
+                    weight_map_1 = 1.0 - 4.0 * model_output_revaug_1[:, 0, :, :, :]
+                    weight_map_1 = weight_map_1.unsqueeze(dim=1)
+                    weight_map_2 = 1.0 - 4.0 * model_output_revaug_2[:, 0, :, :, :]
+                    weight_map_2 = weight_map_2.unsqueeze(dim=1)
+
+                    model_output_1 = self.UNet1(local_batch)
+                    model_output_1 = torch.sigmoid(model_output_1)
+                    model_output_2 = self.UNet2(local_batch)
+                    model_output_2 = torch.sigmoid(model_output_2)
+
+                    dice_score_1 = self.dice_score(model_output_1, local_labels).mean()
+                    dice_score_2 = self.dice_score(model_output_2, local_labels).mean()
+
                     # calculate Ft Loss
-                    ft_loss = self.focal_tversky_loss(model_output, local_labels)
+                    ft_loss_1 = self.focal_tversky_loss(model_output_1, local_labels)
+                    ft_loss_2 = self.focal_tversky_loss(model_output_2, local_labels)
 
-                    mean_loss = ft_loss.mean()
-                    # mean_loss = ((1 - dice_score) * ft_loss).mean()
-                    mean_dice_score = dice_score.mean()
+                    _, indx1 = ft_loss_1.sort()
+                    _, indx2 = ft_loss_2.sort()
 
-                    model_output_aug = self.UNet1(aug_batch)
-                    model_output_aug = torch.sigmoid(model_output_aug)
+                    loss1_seg1 = self.focal_tversky_loss(model_output_1[indx2[0:2], :, :, :, :],
+                                                         local_labels[indx2[0:2], :, :, :, :]).mean()
+                    loss2_seg1 = self.focal_tversky_loss(model_output_2[indx1[0:2], :, :, :, :],
+                                                         local_labels[indx1[0:2], :, :, :, :]).mean()
+                    loss1_seg2 = self.focal_tversky_loss(model_output_2[indx2[2:], :, :, :, :],
+                                                         local_labels[indx2[2:], :, :, :, :]).mean()
+                    loss2_seg2 = self.focal_tversky_loss(model_output_2[indx1[2:], :, :, :, :],
+                                                         local_labels[indx1[2:], :, :, :, :]).mean()
 
-                    # calculate dice score
-                    dice_score_aug = self.dice_score(model_output_aug, aug_labels)
-                    # calculate Ft Loss
-                    ft_loss_aug = self.focal_tversky_loss(model_output_aug, local_labels)
+                    loss1_cor = weight_map_2[indx2[2:], :, :, :, :] * \
+                                self.consistency_loss(model_output_1[indx2[2:], :, :, :, :],
+                                                      model_output_revaug_2[indx2[2:], :, :, :, :])
 
-                    mean_loss_aug = ft_loss_aug.mean()
-                    # mean_loss_aug = ((1 - dice_score_aug) * ft_loss_aug).mean()
-                    mean_dice_score_aug = dice_score_aug.mean()
+                    loss1_cor = loss1_cor.mean()
 
-                    total_mean_loss = mean_loss_aug + mean_loss
-                    total_mean_dice_score = (mean_dice_score_aug + mean_dice_score) / 2
+                    loss1 = 1.0 * (loss1_seg1 + (1.0 - rate_schedule[epoch]) * loss1_seg2) + 10.0 * rate_schedule[
+                        epoch] * loss1_cor
+
+                    loss2_cor = weight_map_1[indx1[2:], :, :, :, :] * \
+                                self.consistency_loss(model_output_2[indx1[2:], :, :, :, :],
+                                                      model_output_revaug_1[indx1[2:], :, :, :, :])
+
+                    loss2_cor = loss2_cor.mean()
+
+                    loss2 = 1.0 * (loss2_seg1 + (1.0 - rate_schedule[epoch]) * loss2_seg2) + 10.0 * rate_schedule[
+                        epoch] * loss2_cor
+
+                    loss1.backward()
+                    self.optimizer1.step()
+                    loss2.backward()
+                    self.optimizer2.step()
 
                 self.logger.info(f"Epoch: {str(epoch)} Batch Index: {str(batch_index)} Training.. "
-                                 f"\n mean_loss {str(mean_loss)} mean_loss_aug {str(mean_loss_aug)} "
-                                 f"\n mean_dice_score {str(mean_dice_score)} mean_dice_score_aug {str(mean_dice_score_aug)} "
-                                 f"\n total_mean_loss {str(total_mean_loss)} total_dice_score {str(total_mean_dice_score)}")
-                # Calculating gradients for UNet1
-                if self.with_apex:
-                    self.scaler.scale(total_mean_loss).backward()
+                                 f"\n model1_loss {str(loss1)} model2_loss {str(loss2)} "
+                                 f"\n model1_dice_score {str(dice_score_1)} mean_dice_score_aug {str(dice_score_2)} "
+                                 )
 
-                    if self.clip_grads:
-                        self.scaler.unscale_(self.optimizer1)
-                        torch.nn.utils.clip_grad_norm_(self.UNet1.parameters(), 1)
-                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-
-                    self.scaler.step(self.optimizer1)
-                    self.scaler.update()
-                else:
-                    if not torch.any(torch.isnan(total_mean_loss)):
-                        total_mean_loss.backward()
-                    else:
-                        self.logger.info("nan found in floss.... no backpropagation!!")
-                    if self.clip_grads:
-                        torch.nn.utils.clip_grad_norm_(self.UNet1.parameters(), 1)
-                        # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
-
-                    self.optimizer1.step()
+                # # Calculating gradients for UNet1
+                # if self.with_apex:
+                #     self.scaler.scale(total_mean_loss).backward()
+                #
+                #     if self.clip_grads:
+                #         self.scaler.unscale_(self.optimizer1)
+                #         torch.nn.utils.clip_grad_norm_(self.UNet1.parameters(), 1)
+                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                #
+                #     self.scaler.step(self.optimizer1)
+                #     self.scaler.update()
+                # else:
+                #     if not torch.any(torch.isnan(total_mean_loss)):
+                #         total_mean_loss.backward()
+                #     else:
+                #         self.logger.info("nan found in floss.... no backpropagation!!")
+                #     if self.clip_grads:
+                #         torch.nn.utils.clip_grad_norm_(self.UNet1.parameters(), 1)
+                #         # torch.nn.utils.clip_grad_value_(self.model.parameters(), 1)
+                #
+                #     self.optimizer1.step()
 
                 training_batch_index += 1
 
                 # Initialising the average loss metrics
-                total_loss += total_mean_loss.detach().item()
-                total_dice_score += total_mean_dice_score.detach().item()
+                total_loss_1 += loss1.detach().item()
+                total_loss_2 += loss2.detach().item()
+                total_dice_score_1 += dice_score_1.detach().item()
+                total_dice_score_2 += dice_score_2.detach().item()
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
 
             # Calculate the average loss per batch in one epoch
-            total_loss /= (batch_index + 1.0)
-            total_dice_score /= (batch_index + 1.0)
+            total_loss_1 /= (batch_index + 1.0)
+            total_loss_2 /= (batch_index + 1.0)
+            total_dice_score_1 /= (batch_index + 1.0)
+            total_dice_score_2 /= (batch_index + 1.0)
 
             # Print every epoch
             self.logger.info("Epoch:" + str(epoch) + " Average Training..." +
-                             "\n loss: " + str(total_loss) + " dice_score: " +
-                             str(total_dice_score))
+                             "\n loss_1: " + str(total_loss_1) + " dice_score_1: " + str(total_dice_score_1) +
+                             "\n loss_2: " + str(total_loss_2) + " dice_score_2: " + str(total_dice_score_2))
 
             write_epoch_summary(writer=self.writer_training, index=epoch,
-                                summary_dict={"Loss": total_loss,
-                                              "DiceScore": total_dice_score
+                                summary_dict={"Loss_1": total_loss_1,
+                                              "Loss_2": total_loss_2,
+                                              "DiceScore_1": total_dice_score_1,
+                                              "DiceScore_2": total_dice_score_2,
                                               })
 
             if self.wandb is not None:
-                self.wandb.log({"Loss": total_loss,
-                                "DiceScore": total_dice_score})
+                self.wandb.log({"Loss_1": total_loss_1,
+                                "Loss_2": total_loss_2,
+                                "DiceScore_1": total_dice_score_1,
+                                "DiceScore_2": total_dice_score_2,
+                                })
 
             torch.cuda.empty_cache()  # to avoid memory errors
             self.validate(training_batch_index, epoch)

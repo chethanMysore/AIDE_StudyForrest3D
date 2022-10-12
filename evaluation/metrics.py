@@ -87,5 +87,4 @@ class ConsistencyLoss(nn.Module):
         self.mseloss = torch.nn.MSELoss(reduction="mean")
 
     def forward(self, inputs, targets):
-        inputs = torch.sigmoid(inputs)
         return self.mseloss(inputs, targets)
