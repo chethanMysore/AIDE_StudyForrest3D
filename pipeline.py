@@ -303,9 +303,9 @@ class Pipeline:
                     weight_map_2 = 1.0 - 4.0 * model_output_revaug_2[:, 0, :, :, :]
                     weight_map_2 = weight_map_2.unsqueeze(dim=1)
 
-                    model_output_1 = self.UNet1(local_batch)
+                    model_output_1 = self.UNet1(local_batch).cuda()
                     model_output_1 = torch.sigmoid(model_output_1)
-                    model_output_2 = self.UNet2(local_batch)
+                    model_output_2 = self.UNet2(local_batch).cuda()
                     model_output_2 = torch.sigmoid(model_output_2)
 
                     dice_score_1 = self.dice_score(model_output_1, local_labels).mean()
@@ -314,11 +314,13 @@ class Pipeline:
                     # calculate Ft Loss
                     ft_loss_1 = self.focal_tversky_loss(model_output_1, local_labels)
                     ft_loss_2 = self.focal_tversky_loss(model_output_2, local_labels)
+                    print(ft_loss_1, ft_loss_2)
 
                     _, indx1 = ft_loss_1.sort()
                     _, indx2 = ft_loss_2.sort()
 
                     print(indx1,indx2)
+
                     print(model_output_1.shape, model_output_2.shape)
 
                     loss1_seg1 = self.focal_tversky_loss(model_output_1[indx2[0:2], :, :, :, :],
