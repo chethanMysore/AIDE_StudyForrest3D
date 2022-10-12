@@ -251,7 +251,7 @@ class Pipeline:
 
     def train(self):
         self.logger.debug("Training...")
-        rate_schedule = np.ones(self.num_epoch)
+        rate_schedule = np.ones(self.num_epochs)
 
         training_batch_index = 0
         for epoch in range(self.num_epochs):
