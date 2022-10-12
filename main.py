@@ -145,7 +145,7 @@ if __name__ == '__main__':
     wandb = None
     if str(args.wandb).lower() == "true":
         import wandb
-        wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name,tags=["v10",["AIDE"]])
+        wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name,tags=["v10","AIDE"])
         wandb.config = {
             "learning_rate": args.learning_rate,
             "epochs": args.num_epochs,
