@@ -296,7 +296,7 @@ class Pipeline:
                     model_output_revaug_2 = self.apply_reverse_transformation(model_output_aug_2,
                                                                               transformation_instances)
 
-                    # todo sharpen
+                    # apply sharpen
 
                     weight_map_1 = 1.0 - 4.0 * model_output_revaug_1[:, 0, :, :, :]
                     weight_map_1 = weight_map_1.unsqueeze(dim=1)
