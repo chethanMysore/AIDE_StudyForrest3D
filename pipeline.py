@@ -318,6 +318,9 @@ class Pipeline:
                     _, indx1 = ft_loss_1.sort()
                     _, indx2 = ft_loss_2.sort()
 
+                    print(indx1,indx2)
+                    print(model_output_1.shape, model_output_2.shape)
+
                     loss1_seg1 = self.focal_tversky_loss(model_output_1[indx2[0:2], :, :, :, :],
                                                          local_labels[indx2[0:2], :, :, :, :]).mean()
                     loss2_seg1 = self.focal_tversky_loss(model_output_2[indx1[0:2], :, :, :, :],
