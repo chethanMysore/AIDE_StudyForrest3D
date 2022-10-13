@@ -27,6 +27,8 @@ class FocalTverskyLoss(nn.Module):
         self.alpha = alpha
 
     def forward(self, y_pred, y_true):
+        print("inside ft loss")
+        print(y_pred.shape, y_true.shape)
         y_true_pos = torch.flatten(y_true)
         y_pred_pos = torch.flatten(y_pred)
         true_pos = torch.sum(y_true_pos * y_pred_pos)
