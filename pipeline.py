@@ -308,14 +308,15 @@ class Pipeline:
                     model_output_2 = self.UNet2(local_batch).cuda()
                     model_output_2 = torch.sigmoid(model_output_2)
 
-                    dice_score_1 = self.dice_score(model_output_1, local_labels).mean()
-                    dice_score_2 = self.dice_score(model_output_2, local_labels).mean()
+                    dice_score_1 = self.dice_score(model_output_1, local_labels)
+                    dice_score_2 = self.dice_score(model_output_2, local_labels)
 
                     # calculate Ft Loss
                     ft_loss_1 = self.focal_tversky_loss(model_output_1, local_labels)
                     ft_loss_2 = self.focal_tversky_loss(model_output_2, local_labels)
                     print(ft_loss_1, ft_loss_2)
-
+                    print(dice_score_1, dice_score_2)
+                    print(local_batch.shape,model_output_1.shape,local_labels.shape)
                     _, indx1 = ft_loss_1.sort()
                     _, indx2 = ft_loss_2.sort()
 
