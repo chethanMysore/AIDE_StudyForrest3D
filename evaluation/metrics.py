@@ -35,7 +35,6 @@ class FocalTverskyLoss(nn.Module):
         pt_1 = (true_pos + self.smooth) / (
                 true_pos + self.alpha * false_neg + (1 - self.alpha) * false_pos + self.smooth)
         # return pow((1 - pt_1), self.gamma)
-        print(pt_1)
         return pow(abs(1 - pt_1), self.gamma)
 
 
