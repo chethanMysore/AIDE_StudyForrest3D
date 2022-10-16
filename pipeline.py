@@ -230,21 +230,21 @@ class Pipeline:
     def apply_reverse_transformation(self, tensor_list, transformation_instances, epoch, batch_index):
         # if no transformation found
         if not any(transformation_instances):
-            print(f"Epoch {epoch} Batch {batch_index} No transformation found")
+            print(f"Epoch {epoch} Batch {batch_index} No inverse transformation found on the whole batch")
             return tensor_list
         else:
             transformed_imgs = []
             for indx, (img, transformations) in enumerate(zip(tensor_list, transformation_instances)):
                 if transformations:
-                    print(
-                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(transformations)} inverse transformation: "
-                        f"{str(transformations)}")
                     inverse_transforms = [t.get_inverse_transform() for t in transformations]
                     inverse_transforms.reverse()
+                    print(
+                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(inverse_transforms)} inverse transformation: "
+                        f"{str(inverse_transforms)}")
                     transform = T.Compose(inverse_transforms)
                     transformed_imgs.append(transform(img))
                 else:
-                    print(f"Epoch {epoch} Batch {batch_index} indx {indx} No transformation found")
+                    print(f"Epoch {epoch} Batch {batch_index} indx {indx} No inverse transformation found")
                     transformed_imgs.append(img)
             return torch.stack(transformed_imgs, dim=0)
 
