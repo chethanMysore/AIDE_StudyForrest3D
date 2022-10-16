@@ -238,13 +238,13 @@ class Pipeline:
                 if transformations:
                     inverse_transforms = [t.get_inverse_transform() for t in transformations]
                     inverse_transforms.reverse()
-                    print(
-                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(inverse_transforms)} inverse transformation: "
-                        f"{str(inverse_transforms)}")
+                    # print(
+                    #     f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(inverse_transforms)} inverse transformation: "
+                    #     f"{str(inverse_transforms)}")
                     transform = T.Compose(inverse_transforms)
                     transformed_imgs.append(transform(img))
                 else:
-                    print(f"Epoch {epoch} Batch {batch_index} indx {indx} No inverse transformation found")
+                    # print(f"Epoch {epoch} Batch {batch_index} indx {indx} No inverse transformation found")
                     transformed_imgs.append(img)
             return torch.stack(transformed_imgs, dim=0)
 
@@ -265,13 +265,13 @@ class Pipeline:
                 transformations.append(random_flip.get_transform())
                 applied_transformation_instance.append(random_flip)
             if transformations:
-                print(f"Epoch {epoch} Batch {batch_index} img_index {indx} "
-                      f"Applied {len(transformations)} transformations {str(transformations)} ")
+                # print(f"Epoch {epoch} Batch {batch_index} img_index {indx} "
+                #       f"Applied {len(transformations)} transformations {str(transformations)} ")
                 transform = T.Compose(transformations)
                 transformed_imgs.append(transform(img))
                 transformed_labels.append(transform(label))
             else:
-                print(f"Epoch {epoch} Batch {batch_index} img_index {indx} : No transformation applied to batch")
+                # print(f"Epoch {epoch} Batch {batch_index} img_index {indx} : No transformation applied to batch")
                 transformed_imgs.append(img)
                 transformed_labels.append(label)
 
@@ -370,21 +370,21 @@ class Pipeline:
                                                          local_labels[indx1[7:], :, :, :, :]).mean()
 
                     loss1_cor = weight_map_2[indx2[2:], :, :, :, :] * \
-                                self.consistency_loss(model_output_1[indx2[2:], :, :, :, :],
-                                                      model_output_revaug_2[indx2[2:], :, :, :, :])
+                                self.consistency_loss(model_output_1[indx2[7:], :, :, :, :],
+                                                      model_output_revaug_2[indx2[7:], :, :, :, :])
 
                     loss1_cor = loss1_cor.mean()
 
-                    loss1 = 1.0 * (loss1_seg1 + (1.0 - rate_schedule[epoch]) * loss1_seg2) + 10.0 * rate_schedule[
+                    loss1 = 1.0 * (loss1_seg1 + (1.0 - rate_schedule[epoch]) * loss1_seg2) + 1.0 * rate_schedule[
                         epoch] * loss1_cor
 
                     loss2_cor = weight_map_1[indx1[2:], :, :, :, :] * \
-                                self.consistency_loss(model_output_2[indx1[2:], :, :, :, :],
-                                                      model_output_revaug_1[indx1[2:], :, :, :, :])
+                                self.consistency_loss(model_output_2[indx1[7:], :, :, :, :],
+                                                      model_output_revaug_1[indx1[7:], :, :, :, :])
 
                     loss2_cor = loss2_cor.mean()
 
-                    loss2 = 1.0 * (loss2_seg1 + (1.0 - rate_schedule[epoch]) * loss2_seg2) + 10.0 * rate_schedule[
+                    loss2 = 1.0 * (loss2_seg1 + (1.0 - rate_schedule[epoch]) * loss2_seg2) + 1.0 * rate_schedule[
                         epoch] * loss2_cor
 
                     loss1.backward(retain_graph=True)
@@ -429,7 +429,7 @@ class Pipeline:
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
-                break;
+                # break;
 
             # Calculate the average loss per batch in one epoch
             total_loss_1 /= (batch_index + 1.0)
@@ -459,7 +459,7 @@ class Pipeline:
             torch.cuda.empty_cache()  # to avoid memory errors
             # self.validate(training_batch_index, epoch)
             torch.cuda.empty_cache()  # to avoid memory errors
-            break
+            # break
 
         return self.UNet1, self.UNet2
 
