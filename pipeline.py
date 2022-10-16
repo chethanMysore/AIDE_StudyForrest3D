@@ -22,7 +22,8 @@ from evaluation.metrics import (SegmentationLoss, ConsistencyLoss, FocalTverskyL
 from utils.customutils import subjects_to_tensors, tensors_to_subjects
 from utils.datasets import SRDataset
 from utils.results_analyser import *
-from utils.transformations_utils import RandomAffineTransformation, RandomRotateTransformation
+from utils.transformations_utils import RandomAffineTransformation, RandomRotateTransformation, \
+    RandomHorizontalFlipTransformation
 from utils.vessel_utils import (load_model, load_model_with_amp, save_model, write_epoch_summary)
 
 __author__ = "Chethan Radhakrishna and Soumick Chatterjee"
@@ -228,8 +229,10 @@ class Pipeline:
 
     def apply_reverse_transformation(self, tensor_list, transformation_instances):
         transformed_imgs = []
-        for img, transformation in zip(tensor_list, transformation_instances):
-            transform = T.Compose([transformation.get_inverse_transform()])
+        for img, transformations in zip(tensor_list, transformation_instances):
+            inverse_transforms = [t.get_inverse_transform() for t in transformations]
+            inverse_transforms.reverse()
+            transform = T.Compose(inverse_transforms)
             transformed_imgs.append(transform(img))
         return torch.stack(transformed_imgs, dim=0)
 
@@ -237,12 +240,23 @@ class Pipeline:
         transformed_labels = []
         transformed_imgs = []
         transformation_instances = []
+
         for img, label in zip(batch, label):
-            random_rotate = RandomRotateTransformation()
-            transform = T.Compose([random_rotate.get_transform()])
+            transformations = []
+            applied_transformation_instance = []
+            if random.random() < 0.5:
+                random_rotate = RandomRotateTransformation()
+                transformations.append(random_rotate.get_transform())
+                applied_transformation_instance.append(random_rotate)
+            if random.random() < 0.5:
+                random_flip = RandomHorizontalFlipTransformation()
+                transformations.append(random_flip.get_transform())
+                applied_transformation_instance.append(random_flip)
+
+            transform = T.Compose(transformations)
             transformed_imgs.append(transform(img))
             transformed_labels.append(transform(label))
-            transformation_instances.append(random_rotate)
+            transformation_instances.append(applied_transformation_instance)
 
         aug_batch = torch.stack(transformed_imgs, dim=0)
         aug_labels = torch.stack(transformed_labels, dim=0)
@@ -268,6 +282,7 @@ class Pipeline:
             for batch_index, patches_batch in enumerate(tqdm(self.train_loader)):
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
                 local_labels = patches_batch['label'][tio.DATA].float()
+
                 aug_batch, aug_labels, transformation_instances = self.apply_transformation(local_batch, local_labels)
 
                 aug_batch = aug_batch.cuda()
@@ -318,16 +333,14 @@ class Pipeline:
                     _, indx1 = ft_loss_1.sort()
                     _, indx2 = ft_loss_2.sort()
 
-                    print(indx1,indx2)
-
-                    loss1_seg1 = self.focal_tversky_loss(model_output_1[indx2[0:2], :, :, :, :],
-                                                         local_labels[indx2[0:2], :, :, :, :]).mean()
-                    loss2_seg1 = self.focal_tversky_loss(model_output_2[indx1[0:2], :, :, :, :],
-                                                         local_labels[indx1[0:2], :, :, :, :]).mean()
-                    loss1_seg2 = self.focal_tversky_loss(model_output_2[indx2[2:], :, :, :, :],
-                                                         local_labels[indx2[2:], :, :, :, :]).mean()
-                    loss2_seg2 = self.focal_tversky_loss(model_output_2[indx1[2:], :, :, :, :],
-                                                         local_labels[indx1[2:], :, :, :, :]).mean()
+                    loss1_seg1 = self.focal_tversky_loss(model_output_1[indx2[0:7], :, :, :, :],
+                                                         local_labels[indx2[0:7], :, :, :, :]).mean()
+                    loss2_seg1 = self.focal_tversky_loss(model_output_2[indx1[0:7], :, :, :, :],
+                                                         local_labels[indx1[0:7], :, :, :, :]).mean()
+                    loss1_seg2 = self.focal_tversky_loss(model_output_2[indx2[7:], :, :, :, :],
+                                                         local_labels[indx2[7:], :, :, :, :]).mean()
+                    loss2_seg2 = self.focal_tversky_loss(model_output_2[indx1[7:], :, :, :, :],
+                                                         local_labels[indx1[7:], :, :, :, :]).mean()
 
                     loss1_cor = weight_map_2[indx2[2:], :, :, :, :] * \
                                 self.consistency_loss(model_output_1[indx2[2:], :, :, :, :],
