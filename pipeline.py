@@ -237,8 +237,8 @@ class Pipeline:
             for indx, (img, transformations) in enumerate(zip(tensor_list, transformation_instances)):
                 if transformations:
                     print(
-                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(transformation_instances)} inverse transformation: "
-                        f"{str(transformation_instances)}")
+                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(transformations)} inverse transformation: "
+                        f"{str(transformations)}")
                     inverse_transforms = [t.get_inverse_transform() for t in transformations]
                     inverse_transforms.reverse()
                     transform = T.Compose(inverse_transforms)
