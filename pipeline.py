@@ -331,7 +331,10 @@ class Pipeline:
                     model_output_revaug_2 = self.apply_reverse_transformation(model_output_aug_2,
                                                                               transformation_instances,epoch, batch_index)
 
-                    # apply sharpen
+                    print(model_output_aug_1.size())
+                    print(model_output_aug_2.size())
+                    print(model_output_revaug_1.size())
+                    print(model_output_revaug_2.size())
 
                     weight_map_1 = 1.0 - 4.0 * model_output_revaug_1[:, 0, :, :, :]
                     weight_map_1 = weight_map_1.unsqueeze(dim=1)
@@ -342,6 +345,10 @@ class Pipeline:
                     model_output_1 = torch.sigmoid(model_output_1)
                     model_output_2 = self.UNet2(local_batch).cuda()
                     model_output_2 = torch.sigmoid(model_output_2)
+
+                    print(weight_map_1.size())
+                    print(model_output_1.size())
+                    print(model_output_2.size())
 
                     dice_score_1 = self.dice_score(model_output_1, local_labels).mean()
                     dice_score_2 = self.dice_score(model_output_2, local_labels).mean()
@@ -422,6 +429,7 @@ class Pipeline:
 
                 # To avoid memory errors
                 torch.cuda.empty_cache()
+                break;
 
             # Calculate the average loss per batch in one epoch
             total_loss_1 /= (batch_index + 1.0)
@@ -449,8 +457,9 @@ class Pipeline:
                                 })
 
             torch.cuda.empty_cache()  # to avoid memory errors
-            self.validate(training_batch_index, epoch)
+            # self.validate(training_batch_index, epoch)
             torch.cuda.empty_cache()  # to avoid memory errors
+            break
 
         return self.UNet1, self.UNet2
 
@@ -476,16 +485,8 @@ class Pipeline:
             no_patches += 1
             local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
             local_labels = patches_batch['label'][tio.DATA].float()
-
-            transformed_labels = []
-            transformed_imgs = []
-            for img, label in zip(local_batch, local_labels):
-                transform = T.Compose([random_rotate.get_transform(), random_affine.get_transform()])
-                transformed_imgs.append(transform(img))
-                transformed_labels.append(transform(label))
-
-            aug_batch = torch.stack(transformed_imgs, dim=0)
-            aug_labels = torch.stack(transformed_labels, dim=0)
+            aug_batch, aug_labels, transformation_instances = self.apply_transformation(local_batch, local_labels,
+                                                                                        epoch, batch_index)
 
             aug_batch = aug_batch.cuda()
             aug_labels = aug_labels.cuda()
