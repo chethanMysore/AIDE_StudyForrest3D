@@ -227,21 +227,33 @@ class Pipeline:
                                                      checkpoint_path,
                                                      batch_index="best" if load_best else "last")
 
-    def apply_reverse_transformation(self, tensor_list, transformation_instances):
-        transformed_imgs = []
-        for img, transformations in zip(tensor_list, transformation_instances):
-            inverse_transforms = [t.get_inverse_transform() for t in transformations]
-            inverse_transforms.reverse()
-            transform = T.Compose(inverse_transforms)
-            transformed_imgs.append(transform(img))
-        return torch.stack(transformed_imgs, dim=0)
+    def apply_reverse_transformation(self, tensor_list, transformation_instances, epoch, batch_index):
+        # if no transformation found
+        if not any(transformation_instances):
+            print(f"Epoch {epoch} Batch {batch_index} No transformation found")
+            return tensor_list
+        else:
+            transformed_imgs = []
+            for indx, (img, transformations) in enumerate(zip(tensor_list, transformation_instances)):
+                if transformations:
+                    print(
+                        f"Epoch {epoch} Batch {batch_index} indx {indx} Applying {len(transformation_instances)} inverse transformation: "
+                        f"{str(transformation_instances)}")
+                    inverse_transforms = [t.get_inverse_transform() for t in transformations]
+                    inverse_transforms.reverse()
+                    transform = T.Compose(inverse_transforms)
+                    transformed_imgs.append(transform(img))
+                else:
+                    print(f"Epoch {epoch} Batch {batch_index} indx {indx} No transformation found")
+                    transformed_imgs.append(img)
+            return torch.stack(transformed_imgs, dim=0)
 
-    def apply_transformation(self, batch, label):
+    def apply_transformation(self, batch, label, epoch, batch_index):
         transformed_labels = []
         transformed_imgs = []
         transformation_instances = []
 
-        for img, label in zip(batch, label):
+        for indx, (img, label) in enumerate(zip(batch, label)):
             transformations = []
             applied_transformation_instance = []
             if random.random() < 0.5:
@@ -252,10 +264,17 @@ class Pipeline:
                 random_flip = RandomHorizontalFlipTransformation()
                 transformations.append(random_flip.get_transform())
                 applied_transformation_instance.append(random_flip)
+            if transformations:
+                print(f"Epoch {epoch} Batch {batch_index} img_index {indx} "
+                      f"Applied {len(transformations)} transformations {str(transformations)} ")
+                transform = T.Compose(transformations)
+                transformed_imgs.append(transform(img))
+                transformed_labels.append(transform(label))
+            else:
+                print(f"Epoch {epoch} Batch {batch_index} img_index {indx} : No transformation applied to batch")
+                transformed_imgs.append(img)
+                transformed_labels.append(label)
 
-            transform = T.Compose(transformations)
-            transformed_imgs.append(transform(img))
-            transformed_labels.append(transform(label))
             transformation_instances.append(applied_transformation_instance)
 
         aug_batch = torch.stack(transformed_imgs, dim=0)
@@ -283,7 +302,8 @@ class Pipeline:
                 local_batch = Pipeline.normaliser(patches_batch['img'][tio.DATA].float())
                 local_labels = patches_batch['label'][tio.DATA].float()
 
-                aug_batch, aug_labels, transformation_instances = self.apply_transformation(local_batch, local_labels)
+                aug_batch, aug_labels, transformation_instances = self.apply_transformation(local_batch, local_labels,
+                                                                                            epoch, batch_index)
 
                 aug_batch = aug_batch.cuda()
                 aug_labels = aug_labels.cuda()
