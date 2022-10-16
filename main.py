@@ -120,7 +120,7 @@ if __name__ == '__main__':
                         default=10.0,
                         help="Number of worker threads")
     parser.add_argument("-wandb",
-                        default=False,
+                        default=True,
                         help="Set this to true to include wandb logging")
     parser.add_argument("-version",
                         default="NA",
