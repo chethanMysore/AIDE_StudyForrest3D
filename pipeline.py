@@ -324,12 +324,12 @@ class Pipeline:
                     model_output_aug_1 = self.UNet1(aug_batch).detach()
                     model_output_aug_1 = torch.sigmoid(model_output_aug_1)
                     model_output_revaug_1 = self.apply_reverse_transformation(model_output_aug_1,
-                                                                              transformation_instances)
+                                                                              transformation_instances,epoch, batch_index)
 
                     model_output_aug_2 = self.UNet2(aug_batch).detach()
                     model_output_aug_2 = torch.sigmoid(model_output_aug_2)
                     model_output_revaug_2 = self.apply_reverse_transformation(model_output_aug_2,
-                                                                              transformation_instances)
+                                                                              transformation_instances,epoch, batch_index)
 
                     # apply sharpen
 
