@@ -331,11 +331,6 @@ class Pipeline:
                     model_output_revaug_2 = self.apply_reverse_transformation(model_output_aug_2,
                                                                               transformation_instances,epoch, batch_index)
 
-                    print(model_output_aug_1.size())
-                    print(model_output_aug_2.size())
-                    print(model_output_revaug_1.size())
-                    print(model_output_revaug_2.size())
-
                     weight_map_1 = 1.0 - 4.0 * model_output_revaug_1[:, 0, :, :, :]
                     weight_map_1 = weight_map_1.unsqueeze(dim=1)
                     weight_map_2 = 1.0 - 4.0 * model_output_revaug_2[:, 0, :, :, :]
@@ -345,10 +340,6 @@ class Pipeline:
                     model_output_1 = torch.sigmoid(model_output_1)
                     model_output_2 = self.UNet2(local_batch).cuda()
                     model_output_2 = torch.sigmoid(model_output_2)
-
-                    print(weight_map_1.size())
-                    print(model_output_1.size())
-                    print(model_output_2.size())
 
                     dice_score_1 = self.dice_score(model_output_1, local_labels).mean()
                     dice_score_2 = self.dice_score(model_output_2, local_labels).mean()
@@ -364,12 +355,12 @@ class Pipeline:
                                                          local_labels[indx2[0:7], :, :, :, :]).mean()
                     loss2_seg1 = self.focal_tversky_loss(model_output_2[indx1[0:7], :, :, :, :],
                                                          local_labels[indx1[0:7], :, :, :, :]).mean()
-                    loss1_seg2 = self.focal_tversky_loss(model_output_2[indx2[7:], :, :, :, :],
+                    loss1_seg2 = self.focal_tversky_loss(model_output_1[indx2[7:], :, :, :, :],
                                                          local_labels[indx2[7:], :, :, :, :]).mean()
                     loss2_seg2 = self.focal_tversky_loss(model_output_2[indx1[7:], :, :, :, :],
                                                          local_labels[indx1[7:], :, :, :, :]).mean()
 
-                    loss1_cor = weight_map_2[indx2[2:], :, :, :, :] * \
+                    loss1_cor = weight_map_2[indx2[7:], :, :, :, :] * \
                                 self.consistency_loss(model_output_1[indx2[7:], :, :, :, :],
                                                       model_output_revaug_2[indx2[7:], :, :, :, :])
 
@@ -378,7 +369,7 @@ class Pipeline:
                     loss1 = 1.0 * (loss1_seg1 + (1.0 - rate_schedule[epoch]) * loss1_seg2) + 1.0 * rate_schedule[
                         epoch] * loss1_cor
 
-                    loss2_cor = weight_map_1[indx1[2:], :, :, :, :] * \
+                    loss2_cor = weight_map_1[indx1[7:], :, :, :, :] * \
                                 self.consistency_loss(model_output_2[indx1[7:], :, :, :, :],
                                                       model_output_revaug_1[indx1[7:], :, :, :, :])
 
