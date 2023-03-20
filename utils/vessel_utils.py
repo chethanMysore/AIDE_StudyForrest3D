@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 # from __future__ import print_function, division
-"""
+'''
 
-Purpose :
+Purpose : 
 
-"""
+'''
 
 
 import os
 
 import matplotlib.pyplot as plt
+import nibabel as nib
 import numpy as np
 import torch
 import torch.utils.data
@@ -18,20 +19,23 @@ from PIL import TiffImagePlugin
 from skimage.filters import threshold_otsu
 from torch.cuda.amp import GradScaler
 
-__author__ = "Chethan Radhakrishna and Soumick Chatterjee"
-__credits__ = ["Chethan Radhakrishna", "Soumick Chatterjee"]
+# import GPUtil as GPU
+# import psutil
+# import humanize
+
+__author__ = "Kartik Prabhu, Mahantesh Pattadkal, and Soumick Chatterjee"
+__copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"
+__credits__ = ["Kartik Prabhu", "Mahantesh Pattadkal", "Soumick Chatterjee"]
 __license__ = "GPL"
 __version__ = "1.0.0"
-__maintainer__ = "Chethan Radhakrishna"
-__email__ = "chethan.radhakrishna@st.ovgu.de"
-__status__ = "Development"
+__maintainer__ = "Soumick Chatterjee"
+__email__ = "soumick.chatterjee@ovgu.de"
+__status__ = "Production"
 
-
-def min_max(array):
+def minmax(array):
     return (array - array.min()) / (array.max() - array.min())
 
-
-def write_summary(writer, index, loss1=0, loss2=0, total_loss=0):
+def write_summary(writer, logger, index, original=None, reconstructed=None, focalTverskyLoss=0, mipLoss=0, diceLoss=0, diceScore=0, iou=0):
     """
     Method to write summary to the tensorboard.
     index: global_index for the visualisation
@@ -39,96 +43,97 @@ def write_summary(writer, index, loss1=0, loss2=0, total_loss=0):
     Losses: all losses used as metric
     """
     print('Writing Summary...')
-    writer.add_scalar('Loss1', loss1, index)
-    writer.add_scalar('Loss2', loss2, index)
-    writer.add_scalar('TotalLoss', total_loss, index)
+    writer.add_scalar('FocalTverskyLoss', focalTverskyLoss, index)
+    writer.add_scalar('MipLoss', mipLoss, index)
+    writer.add_scalar('DiceLoss', diceLoss, index)
+    writer.add_scalar('DiceScore', diceScore, index)
+    writer.add_scalar('IOU', iou, index)
 
+    if original is not None and reconstructed is not None:
+        writer.add_image('original', original.cpu().data.numpy()[None,:],index)
+        writer.add_image('reconstructed', reconstructed.cpu().data.numpy()[None,:], index)
+        writer.add_image('diff', np.moveaxis(create_diff_mask(reconstructed,original,logger), -1, 0), index) #create_diff_mask is of the format HXWXC, but CXHXW is needed
 
-def write_epoch_summary(writer, index, loss1=0, loss2=0, total_loss=0):
+def write_Epoch_summary(writer, index, focalTverskyLoss=0, mipLoss=0, diceLoss=0, diceScore=0, iou=0, total_loss=0):
     """
     Method to write summary to the tensorboard.
     index: global_index for the visualisation
     Losses: all losses used as metric
     """
     print('Writing Epoch Summary...')
-    writer.add_scalar('Loss1', loss1, index)
-    writer.add_scalar('Loss2', loss2, index)
-    writer.add_scalar('TotalLossPerEpoch', total_loss, index)
+    writer.add_scalar('FocalTverskyLoss (Per Epoch)', focalTverskyLoss, index)
+    writer.add_scalar('MipLoss (Per Epoch)', mipLoss, index)
+    writer.add_scalar('DiceLoss (Per Epoch)', diceLoss, index)
+    writer.add_scalar('DiceScore (Per Epoch)', diceScore, index)
+    writer.add_scalar('IOU (Per Epoch)', iou, index)  
+    writer.add_scalar('TotalLoss (Per Epoch)', total_loss, index)
 
-
-def save_model(checkpoint_path, state, filename='checkpoint'):
+def save_model(CHECKPOINT_PATH, state, filename='checkpoint', fold_index=""):
     """
     Method to save model
     """
     print('Saving model...')
-    if not os.path.exists(checkpoint_path):
-        os.mkdir(checkpoint_path)
-    torch.save(state, checkpoint_path + filename + str(state['epoch_type']) + '.pth')
+    if not os.path.exists(CHECKPOINT_PATH):
+        os.mkdir(CHECKPOINT_PATH)
+    torch.save(state, CHECKPOINT_PATH + filename + str(state['epoch_type']) + str(fold_index) + '.pth')
 
 
-def load_model(UNet1, UNet2, optimizer1, optimizer2, checkpoint_path, batch_index='best', filename='checkpoint'):
+def load_model(model, optimizer, CHECKPOINT_PATH, batch_index='best', filename='checkpoint', fold_index=""):
     """
     Method to load model, make sure to set the model to eval, use optimiser if want to continue training
     """
     print('Loading model...')
-    checkpoint = torch.load(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))
-    UNet1.load_state_dict(checkpoint['state_dict'][0])
-    UNet2.load_state_dict(checkpoint['state_dict'][1])
-    optimizer1.load_state_dict(checkpoint['optimizer'][0])
-    optimizer2.load_state_dict(checkpoint['optimizer'][2])
-    UNet1.eval()
-    UNet2.eval()
-    return UNet1, UNet2, optimizer1, optimizer2
+    checkpoint = torch.load(os.path.join(CHECKPOINT_PATH, filename + str(batch_index) + str(fold_index) + '.pth'))
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    model.eval()
+    return model, optimizer
 
 
-def load_model_with_amp(UNet1, UNet2, optimizer1, optimizer2, checkpoint_path, batch_index='best', filename='checkpoint'):
+def load_model_with_amp(model, optimizer, CHECKPOINT_PATH, batch_index='best', filename='checkpoint', fold_index=""):
     """
     Method to load model, make sure to set the model to eval, use optimiser if want to continue training
     opt_level="O1"
     """
     print('Loading model...')
-    UNet1.cuda()
-    UNet2.cuda()
-    checkpoint = torch.load(os.path.join(checkpoint_path, filename + str(batch_index) + '.pth'))
-    UNet1.load_state_dict(checkpoint['state_dict'][0])
-    UNet2.load_state_dict(checkpoint['state_dict'][1])
-    optimizer1.load_state_dict(checkpoint['optimizer'][0])
-    optimizer2.load_state_dict(checkpoint['optimizer'][2])
+    model.cuda()
+    checkpoint = torch.load(os.path.join(CHECKPOINT_PATH, filename + str(batch_index) + str(fold_index) + '.pth'))
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
     scaler = GradScaler()
     scaler.load_state_dict(checkpoint['amp'])
-    UNet1.eval()
-    UNet2.eval()
-    return UNet1, UNet2, optimizer1, optimizer2, scaler
+    model.eval()
+    return model, optimizer, scaler
 
 
-def convert_and_save_tif(image_3d, output_path, filename='output.tif', is_colored=True):
+def convert_and_save_tif(image3D, output_path, filename='output.tif', isColored=True):
     """
     Method to convert 3D tensor to tiff image
     """
     image_list = []
-    num = 3 if is_colored else 1
-    for i in range(0, int(image_3d.shape[0] / num)):
+    num = 3# if isColored else 1
+    for i in range(0, int(image3D.shape[0] / num)):
         index = i * num
-        tensor_image = image_3d[index:(index + num), :, :]
+        tensor_image = image3D[index:(index + num), :, :]
         image = transforms.ToPILImage(mode='RGB')(tensor_image)
         image_list.append(image)
 
-    print('convert_and_save_tif:size of image:' + str(len(image_list)))
+    print('convert_and_save_tif:size of image:'+ str(len(image_list)))
     with TiffImagePlugin.AppendingTiffWriter(output_path + filename, True) as tifWriter:
         for im in image_list:
+            # with open(DATASET_FOLDER+tiff_in) as tiff_in:
             im.save(tifWriter)
             tifWriter.newFrame()
     print("Conversion to tiff completed, image saved as {}".format(filename))
 
-
-def convert_and_save_tif_greyscale(image_3d, output_path, filename='output.tif'):
+def convert_and_save_tif_greyscale(image3D, output_path, filename='output.tif'):
     """
     Method to convert 3D tensor to tiff image
     """
     image_list = []
 
-    for i in range(0, int(image_3d.shape[0])):
-        tensor_image = image_3d[i]
+    for i in range(0, int(image3D.shape[0])):
+        tensor_image = image3D[i]
         image = transforms.ToPILImage(mode='F')(tensor_image)
         image_list.append(image)
 
@@ -153,7 +158,7 @@ def create_mask(predicted, logger):
         predicted_binary = predicted > thresh
     except Exception as error:
         logger.exception(error)
-        predicted_binary = predicted > 0.5  # exception will be thrown if input image seems to have just one color 1.0.
+        predicted_binary = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
 
     # Define colors
     black = np.array([0, 0, 0], dtype=np.uint8)  # background
@@ -166,7 +171,6 @@ def create_mask(predicted, logger):
     rgb_image[predicted_binary] = white
 
     return rgb_image
-
 
 def create_diff_mask(predicted, label, logger):
     """
@@ -181,18 +185,38 @@ def create_diff_mask(predicted, label, logger):
         predicted_binary = predicted > thresh
     except Exception as error:
         logger.exception(error)
-        predicted_binary = predicted > 0.5  # exception will be thrown if input image seems to have just one color 1.0.
+        predicted_binary = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
+
+    # fig, axes = plt.subplots(ncols=3, figsize=(8, 2.5))
+    # ax = axes.ravel()
+    # ax[0] = plt.subplot(1, 3, 1)
+    # ax[1] = plt.subplot(1, 3, 2)
+    # ax[2] = plt.subplot(1, 3, 3, sharex=ax[0], sharey=ax[0])
+    #
+    # ax[0].imshow(predicted, cmap=plt.cm.gray)
+    # ax[0].set_title('Original')
+    # ax[0].axis('off')
+    #
+    # ax[1].hist(predicted.ravel(), bins=256)
+    # ax[1].set_title('Histogram')
+    # ax[1].axvline(thresh, color='r')
+    #
+    # ax[2].imshow(predicted_binary, cmap=plt.cm.gray)
+    # ax[2].set_title('Thresholded')
+    # ax[2].axis('off')
+    #
+    # plt.show()
 
     diff1 = np.subtract(label, predicted_binary) > 0
     diff2 = np.subtract(predicted_binary, label) > 0
 
     # Define colors
     red = np.array([255, 0, 0], dtype=np.uint8)  # under_detected
-    # green = np.array([0, 255, 0], dtype=np.uint8)  # over_detected
+    green = np.array([0, 255, 0], dtype=np.uint8)  # over_detected
     black = np.array([0, 0, 0], dtype=np.uint8)  # background
     white = np.array([255, 255, 255], dtype=np.uint8)  # prediction_output
-    blue = np.array([0, 0, 255], dtype=np.uint8)  # over_detected
-    # yellow = np.array([255, 255, 0], dtype=np.uint8)  # under_detected
+    blue = np.array([0, 0, 255], dtype=np.uint8) # over_detected
+    yellow = np.array([255, 255, 0], dtype=np.uint8)  # under_detected
 
     # Make RGB array, pre-filled with black(background)
     rgb_image = np.zeros((predicted_binary.shape[0], predicted_binary.shape[1], 3), dtype=np.uint8) + black
@@ -204,8 +228,7 @@ def create_diff_mask(predicted, label, logger):
 
     return rgb_image
 
-
-def create_diff_mask_binary(predicted, label):
+def create_diff_mask_binary(predicted, label, logger):
     """
     Method find the difference between the 2 binary images and overlay colors
     predicted, label : slices , 2D tensor
@@ -220,11 +243,11 @@ def create_diff_mask_binary(predicted, label):
 
     # Define colors
     red = np.array([255, 0, 0], dtype=np.uint8)  # under_detected
-    # green = np.array([0, 255, 0], dtype=np.uint8)  # over_detected
+    green = np.array([0, 255, 0], dtype=np.uint8)  # over_detected
     black = np.array([0, 0, 0], dtype=np.uint8)  # background
     white = np.array([255, 255, 255], dtype=np.uint8)  # prediction_output
-    blue = np.array([0, 0, 255], dtype=np.uint8)  # over_detected
-    # yellow = np.array([255, 255, 0], dtype=np.uint8)  # under_detected
+    blue = np.array([0, 0, 255], dtype=np.uint8) # over_detected
+    yellow = np.array([255, 255, 0], dtype=np.uint8)  # under_detected
 
     # Make RGB array, pre-filled with black(background)
     rgb_image = np.zeros((predicted_binary.shape[0], predicted_binary.shape[1], 3), dtype=np.uint8) + black
@@ -236,10 +259,11 @@ def create_diff_mask_binary(predicted, label):
     return rgb_image
 
 
+
 def show_diff(label, predicted, diff_image):
-    """
-    Method to display the differences between label, predicted and diff_image
-    """
+    '''
+   Method to display the differences between label, predicted and diff_image
+   '''
     fig, axes = plt.subplots(ncols=3, figsize=(8, 2.5))
     ax = axes
     ax[0] = plt.subplot(1, 3, 1)
@@ -259,3 +283,4 @@ def show_diff(label, predicted, diff_image):
     ax[2].axis('off')
 
     plt.show()
+
