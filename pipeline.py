@@ -393,11 +393,11 @@ class Pipeline:
                 outputs2 = self.net2(inputs)
                 outputs1 = outputs1.view(targets1.size(0), 256, 256)
                 outputs2 = outputs2.view(targets2.size(0), 256, 256)
-                if epoch == 15:
-                    outputs1 = torch.sigmoid(outputs1).detach().cpu()
-                    outputs2 = torch.sigmoid(outputs2).detach().cpu()
-                    output1_list.extend(outputs1)
-                    output2_list.extend(outputs2)
+                # if epoch == 15:
+                #     outputs1 = torch.sigmoid(outputs1).detach().cpu()
+                #     outputs2 = torch.sigmoid(outputs2).detach().cpu()
+                #     output1_list.extend(outputs1)
+                #     output2_list.extend(outputs2)
                 loss1 = self.seg_loss(outputs1, targets2).mean()
                 loss2 = self.seg_loss(outputs2, targets1).mean()
             val_count += inputs.shape[0]
