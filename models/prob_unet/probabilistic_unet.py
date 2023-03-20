@@ -2,9 +2,9 @@
 
 from logging import log
 import torch.nn.functional as F
-from Models.prob_unet.unet import Unet
-from Models.prob_unet.unet_blocks import *
-from Models.prob_unet.utils import (init_weights,
+from models.prob_unet.unet import Unet
+from models.prob_unet.unet_blocks import *
+from models.prob_unet.utils import (init_weights,
                                     init_weights_orthogonal_normal,
                                     ce_loss)
 from torch.distributions import Independent, Normal, kl

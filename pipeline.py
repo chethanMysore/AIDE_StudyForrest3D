@@ -19,16 +19,16 @@ from skimage.filters import threshold_otsu
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from Evaluation.evaluate import (IOU, Dice, FocalTverskyLoss, MIP_Loss, getLosses, segmentationLossImage,
+from evaluation.evaluate import (IOU, Dice, FocalTverskyLoss, MIP_Loss, getLosses, segmentationLossImage,
                                  consistencyLossImage, getMetric, Dice_fn)
-from Utils.elastic_transform import RandomElasticDeformation, warp_image
-from Utils.result_analyser import *
-from Utils.vessel_utils import (convert_and_save_tif, create_diff_mask,
+from utils.elastic_transform import RandomElasticDeformation, warp_image
+from utils.result_analyser import *
+from utils.vessel_utils import (convert_and_save_tif, create_diff_mask,
                                 create_mask, load_model, load_model_with_amp,
                                 save_model, write_summary, write_Epoch_summary)
-from Utils.datasets import prostate_seg
-from Utils.transforms import Compose, Resize, RandomRotate, RandomHorizontallyFlip, ToTensor, Normalize
-from Utils.model_manager import getModel
+from utils.datasets import prostate_seg
+from utils.transforms import Compose, Resize, RandomRotate, RandomHorizontallyFlip, ToTensor, Normalize
+from utils.model_manager import getModel
 
 __author__ = "Kartik Prabhu, Mahantesh Pattadkal, and Soumick Chatterjee"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"

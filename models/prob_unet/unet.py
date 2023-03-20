@@ -1,5 +1,5 @@
 import torch.nn.functional as F
-from Models.prob_unet.unet_blocks import *
+from models.prob_unet.unet_blocks import *
 
 
 class Unet(nn.Module):

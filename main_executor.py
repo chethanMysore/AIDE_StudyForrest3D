@@ -10,9 +10,9 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
 from pipeline import Pipeline
-from Utils.logger import Logger
-from Utils.model_manager import getModel
-from Utils.vessel_utils import load_model, load_model_with_amp
+from utils.logger import Logger
+from utils.model_manager import getModel
+from utils.vessel_utils import load_model, load_model_with_amp
 
 __author__ = "Kartik Prabhu, Mahantesh Pattadkal, and Soumick Chatterjee"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"
@@ -58,7 +58,7 @@ if __name__ == '__main__':
                         default=True,
                         help="To train the model")
     parser.add_argument('-test',
-                        default=True,
+                        default=False,
                         help="To test the model")
     parser.add_argument('-test_with_mip',
                         default=False,
@@ -221,7 +221,7 @@ if __name__ == '__main__':
     if str(args.wandb).lower() == "true":
         import wandb
 
-        wandb.init(project="DS6_VesselSeg2", entity="ds6_vessel_seg2", notes=args.model_name)
+        wandb.init(project="AIDE_StudyForrest", entity="ds6_vessel_seg2", notes=args.model_name)
         wandb.config = {
             "learning_rate": args.learning_rate,
             "epochs": args.num_epochs,

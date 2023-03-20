@@ -4,9 +4,9 @@
 Purpose : model selector
 
 '''
-from Models.attentionunet3d import AttU_Net
-from Models.prob_unet.probabilistic_unet import ProbabilisticUnet
-from Models.unet3d import U_Net, U_Net_DeepSup
+from models.attentionunet3d import AttU_Net
+from models.prob_unet.probabilistic_unet import ProbabilisticUnet
+from models.unet3d import U_Net, U_Net_DeepSup
 
 __author__ = "Kartik Prabhu, Mahantesh Pattadkal, and Soumick Chatterjee"
 __copyright__ = "Copyright 2020, Faculty of Computer Science, Otto von Guericke University Magdeburg, Germany"

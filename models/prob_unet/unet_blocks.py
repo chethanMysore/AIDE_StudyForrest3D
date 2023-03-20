@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from Models.prob_unet.utils import init_weights
+from models.prob_unet.utils import init_weights
 from torch.autograd import Variable
 
 
