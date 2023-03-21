@@ -73,8 +73,7 @@ def save_model(CHECKPOINT_PATH, state, filename='checkpoint', fold_index=""):
     Method to save model
     """
     print('Saving model...')
-    if not os.path.exists(CHECKPOINT_PATH):
-        os.mkdir(CHECKPOINT_PATH)
+    os.makedirs(CHECKPOINT_PATH, exist_ok=True)
     torch.save(state, CHECKPOINT_PATH + filename + str(state['epoch_type']) + str(fold_index) + '.pth')
 
 
