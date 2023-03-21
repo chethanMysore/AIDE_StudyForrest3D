@@ -102,8 +102,8 @@ class Pipeline:
         self.mip_loss_coeff = cmd_args.mip_loss_coeff
         self.iou = IOU()
 
-        self.BEST_DICE1 = float('inf')
-        self.BEST_DICE2 = float('inf')
+        self.BEST_DICE1 = float(0)
+        self.BEST_DICE2 = float(0)
         self.test_set = test_set
         self.train_root = cmd_args.train_root
         self.test_root = cmd_args.test_root
@@ -164,8 +164,8 @@ class Pipeline:
         self.optimizer2 = torch.optim.Adam(self.net2.parameters(), lr=self.learning_rate, amsgrad=True)
         self.scheduler1 = torch.optim.lr_scheduler.StepLR(self.optimizer1, step_size=20, gamma=0.1)
         self.scheduler2 = torch.optim.lr_scheduler.StepLR(self.optimizer2, step_size=20, gamma=0.1)
-        self.BEST_DICE1 = float('inf')
-        self.BEST_DICE2 = float('inf')
+        self.BEST_DICE1 = float(0)
+        self.BEST_DICE2 = float(0)
 
     def reverseaug(self, augset, augoutput, classno):
         for batch_idx in range(len(augset['augno'])):
