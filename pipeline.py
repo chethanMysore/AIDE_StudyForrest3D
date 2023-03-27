@@ -123,6 +123,11 @@ class Pipeline:
             Normalize(mean=None,
                       std=None)])
         self.test_aug = Compose([
+            Resize(size=(256, 256)),
+            ToTensor(),
+            Normalize(mean=None,
+                      std=None)])
+        self.predict_aug = Compose([
             ToTensor(),
             Normalize(mean=None,
                       std=None)])
@@ -664,7 +669,7 @@ class Pipeline:
             subjectname = re.search(r'(?<=\/(Image)\/)[\w|\d]{8}', test_data_imgs[0]).group(0)
 
             test_dataset = prostate_seg(root=self.train_root, csv_file=None, train=False, tempmaskfolder=self.tempmaskfolder,
-                                         transform=self.test_aug, imgs=test_data_imgs, masks=test_data_masks)
+                                         transform=self.predict_aug, imgs=test_data_imgs, masks=test_data_masks)
             test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size,
                                       num_workers=4, shuffle=False)
             result_root = os.path.join(self.output_path, self.model_name, "results")
