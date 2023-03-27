@@ -5,6 +5,7 @@
 
 import os
 import random
+import re
 import sys
 from glob import glob
 
@@ -122,7 +123,6 @@ class Pipeline:
             Normalize(mean=None,
                       std=None)])
         self.test_aug = Compose([
-            Resize(size=(256, 256)),
             ToTensor(),
             Normalize(mean=None,
                       std=None)])
@@ -641,104 +641,61 @@ class Pipeline:
         #
         # df.to_excel(os.path.join(result_root, "Results_Main.xlsx"))
 
-    def test(self, test_logger, save_results=True, test_subjects=None, fold_index=""):
+    def test(self, test_logger, fold_index=""):
         test_logger.debug('Testing...')
 
-        if test_subjects is None:
-            test_folder_path = self.DATASET_FOLDER + '/test/'
-            test_label_path = self.DATASET_FOLDER + '/test_label/'
+        test_label_path = self.DATASET_FOLDER + '/test_label/'
+        labels = glob(test_label_path + "*.nii") + glob(test_label_path + "*.nii.gz")
+        test_labels = []
+        for label in labels:
+            filename = os.path.basename(label).split('.')[0]
+            test_labels.append((tio.LabelMap(label), filename))
 
-            test_subjects = self.create_TIOSubDS(vol_path=test_folder_path, is_train=False, label_path=test_label_path,
-                                                 get_subjects_only=True)
+        test_data = pd.read_csv(self.test_csv)
+        test_cases = pd.read_csv(self.testcase_csv)['Image'].tolist()
 
-        overlap = np.subtract(self.patch_size, (self.stride_length, self.stride_width, self.stride_depth))
+        for test_case in test_cases:
+            test_samples = test_data.applymap(lambda row: row if [vol for vol in [test_case]
+                                                                    if row.startswith(str(vol) + "/Image")
+                                                                    or row.startswith(str(vol) + "/Mask")] else None)
+            test_samples = test_samples[test_samples['Image'].notnull()]
+            test_data_imgs = test_samples['Image'].values.tolist()
+            test_data_masks = test_samples['Mask'].values.tolist()
+            subjectname = re.search(r'(?<=\/(Image)\/)[\w|\d]{8}', test_data_imgs[0]).group(0)
 
-        df = pd.DataFrame(columns=["Subject", "Dice", "IoU"])
-        result_root = os.path.join(self.output_path, self.model_name, "results")
-        os.makedirs(result_root, exist_ok=True)
+            test_dataset = prostate_seg(root=self.train_root, csv_file=None, train=False, tempmaskfolder=self.tempmaskfolder,
+                                         transform=self.test_aug, imgs=test_data_imgs, masks=test_data_masks)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size,
+                                      num_workers=4, shuffle=False)
+            result_root = os.path.join(self.output_path, self.model_name, "results")
+            os.makedirs(result_root, exist_ok=True)
 
-        self.net1.eval()
+            self.net1.eval()
+            output_list = []
+            with torch.no_grad():
+                for batch_idx, (inputs, augset, targets, targets1, targets2) in \
+                        tqdm(enumerate(test_loader), total=int(len(test_loader.dataset) / self.batch_size)):
+                    inputs = inputs.unsqueeze(dim=1)
+                    output = self.net1(inputs)
+                    output = torch.movedim(output, 2, -1)
+                    output = output.detach().cpu()
+                    for x in output:
+                        output_list.append(x)
 
-        with torch.no_grad():
-            for test_subject in test_subjects:
-                if 'label' in test_subject:
-                    label = test_subject['label'][tio.DATA].float().squeeze().numpy()
-                    del test_subject['label']
-                else:
-                    label = None
-                subjectname = test_subject['subjectname']
-                del test_subject['subjectname']
-
-                grid_sampler = tio.inference.GridSampler(
-                    test_subject,
-                    self.patch_size,
-                    overlap,
-                )
-                aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="average")
-                patch_loader = torch.utils.data.DataLoader(grid_sampler, batch_size=self.batch_size, shuffle=False,
-                                                           num_workers=self.num_worker)
-
-                for index, patches_batch in enumerate(tqdm(patch_loader)):
-                    local_batch = self.normaliser(patches_batch['img'][tio.DATA].float().cuda())
-                    locations = patches_batch[tio.LOCATION]
-
-                    local_batch = torch.movedim(local_batch, -1, -3)
-
-                    with autocast(enabled=self.with_apex):
-                        if not self.isProb:
-                            output = self.net1(local_batch)
-                            if type(output) is tuple or type(output) is list:
-                                output = output[0]
-                            output = torch.sigmoid(output).detach().cpu()
-                        else:
-                            self.net1.forward(local_batch, training=False)
-                            output = self.net1.sample(
-                                testing=True).detach().cpu()  # TODO: need to check whether sigmoid is needed for prob
-
-                    output = torch.movedim(output, -3, -1).type(local_batch.type())
-                    aggregator.add_batch(output, locations)
-
-                predicted = aggregator.get_output_tensor().squeeze().numpy()
-
-                try:
-                    thresh = threshold_otsu(predicted)
-                    result = predicted > thresh
-                except Exception as error:
-                    test_logger.exception(error)
-                    result = predicted > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
-                result = result.astype(np.float32)
-
-                if label is not None:
-                    datum = {"Subject": subjectname}
-                    dice3D = dice(result, label)
-                    iou3D = IoU(result, label)
-                    datum = pd.DataFrame.from_dict({**datum, "Dice": [dice3D], "IoU": [iou3D]})
-                    df = pd.concat([df, datum], ignore_index=True)
-
-                if save_results:
-                    save_nifti(result, os.path.join(result_root, subjectname + "_fld" + str(fold_index) + ".nii.gz"))
-
-                    resultMIP = np.max(result, axis=-1)
-                    Image.fromarray((resultMIP * 255).astype('uint8'), 'L').save(
-                        os.path.join(result_root, subjectname + str(fold_index) + "_MIP.tif"))
-
-                    if label is not None:
-                        overlay = create_diff_mask_binary(result, label)
-                        save_tifRGB(overlay, os.path.join(result_root, subjectname + "_fld" + str(fold_index) + "_colour.tif"))
-
-                        overlayMIP = create_diff_mask_binary(resultMIP, np.max(label, axis=-1))
-                        color_mip = Image.fromarray(overlayMIP.astype('uint8'), 'RGB')
-                        color_mip.save(
-                            os.path.join(result_root, subjectname + "_fld" + str(fold_index) + "_colourMIP.tif"))
-                        if self.wandb is not None:
-                            self.wandb.log({"" + subjectname + "_fld" + str(fold_index): self.wandb.Image(color_mip)})
-
-
-                test_logger.info("Testing " + subjectname + "..." +
-                                 "\n Dice:" + str(dice3D) +
-                                 "\n JacardIndex:" + str(iou3D))
-
-        df.to_excel(os.path.join(result_root, "Results_Main_fld" + str(fold_index) + ".xlsx"))
+                output_3d = torch.stack(output_list, dim=2)
+                output_3d = torch.movedim(output_3d, 2, -1).squeeze().numpy().astype(np.float32)
+                save_nifti(output_3d, os.path.join(result_root, subjectname + "_fld" + str(fold_index) + ".nii.gz"))
+                resultMIP = np.max(output_3d, axis=-1)
+                Image.fromarray((resultMIP * 255).astype('uint8'), 'L').save(
+                    os.path.join(result_root, subjectname + str(fold_index) + "_MIP.tif"))
+                test_label = [label[tio.DATA].float().squeeze().numpy() for
+                              (label, sub_name) in test_labels if sub_name == subjectname][0]
+                overlayMIP = create_diff_mask_binary(resultMIP, np.max(test_label, axis=-1))
+                color_mip = Image.fromarray(overlayMIP.astype('uint8'), 'RGB')
+                color_mip.save(
+                    os.path.join(result_root, subjectname + "_fld" + str(fold_index) + "_colourMIP.tif"))
+                if self.wandb is not None:
+                    self.wandb.log({"" + subjectname + "_fld" + str(fold_index): self.wandb.Image(color_mip)})
 
     def predict(self, image_path, label_path, predict_logger):
         image_name = os.path.basename(image_path).split('.')[0]
