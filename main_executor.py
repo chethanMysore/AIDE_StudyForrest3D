@@ -251,8 +251,8 @@ if __name__ == '__main__':
                         writer_training=writer_training, writer_validating=writer_validating, test_logger=test_logger, wandb=wandb)
 
     # loading existing checkpoint if supplied
-    if bool(LOAD_PATH):
-        pipeline.load(checkpoint_path=LOAD_PATH, load_best=args.load_best)
+    # if bool(LOAD_PATH):
+    #     pipeline.load(checkpoint_path=LOAD_PATH, load_best=args.load_best)
 
     # try:
 
@@ -266,7 +266,7 @@ if __name__ == '__main__':
                 pipeline.load(checkpoint_path=LOAD_PATH, load_best=args.load_best, fold_index=args.fold_index)
             else:
                 pipeline.load(load_best=args.load_best)
-        pipeline.test(test_logger=test_logger)
+        pipeline.test(test_logger=test_logger, fold_index=args.fold_index)
         torch.cuda.empty_cache()  # to avoid memory errors
 
     if args.test_with_mip:
