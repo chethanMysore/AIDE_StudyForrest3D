@@ -688,9 +688,16 @@ class Pipeline:
                         output_list.append(x)
 
                 output_3d = torch.stack(output_list, dim=2)
-                output_3d = torch.movedim(output_3d, 2, -1).squeeze().numpy().astype(np.float32)
-                save_nifti(output_3d, os.path.join(result_root, subjectname + "_fld" + str(fold_index) + ".nii.gz"))
-                resultMIP = np.max(output_3d, axis=-1)
+                output_3d = torch.movedim(output_3d, 2, -1).squeeze().numpy()
+                try:
+                    thresh = threshold_otsu(output_3d)
+                    result = output_3d > thresh
+                except Exception as error:
+                    test_logger.exception(error)
+                    result = output_3d > 0.5  # exception will be thrown only if input image seems to have just one color 1.0.
+                result = result.astype(np.float32)
+                save_nifti(result, os.path.join(result_root, subjectname + "_fld" + str(fold_index) + ".nii.gz"))
+                resultMIP = np.max(result, axis=-1)
                 Image.fromarray((resultMIP * 255).astype('uint8'), 'L').save(
                     os.path.join(result_root, subjectname + str(fold_index) + "_MIP.tif"))
                 test_label = [label[tio.DATA].float().squeeze().numpy() for
