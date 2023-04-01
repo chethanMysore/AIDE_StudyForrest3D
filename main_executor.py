@@ -167,6 +167,10 @@ if __name__ == '__main__':
                         type=int,
                         default=5,
                         help="Set the number of folds for cross validation")
+    parser.add_argument("-fold_index",
+                        type=int,
+                        default=0,
+                        help="Set the number of folds for cross validation")
     parser.add_argument("-wandb",
                         default=True,
                         help="Set this to true to include wandb logging")
@@ -259,7 +263,7 @@ if __name__ == '__main__':
     if args.test:
         if args.load_best:
             if bool(LOAD_PATH):
-                pipeline.load(checkpoint_path=LOAD_PATH, load_best=args.load_best)
+                pipeline.load(checkpoint_path=LOAD_PATH, load_best=args.load_best, fold_index=args.fold_index)
             else:
                 pipeline.load(load_best=args.load_best)
         pipeline.test(test_logger=test_logger)
